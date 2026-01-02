@@ -57,6 +57,30 @@ export default {
           border: "hsl(var(--sidebar-border))",
           ring: "hsl(var(--sidebar-ring))",
         },
+        // Status colors
+        status: {
+          draft: "hsl(var(--status-draft))",
+          ready: "hsl(var(--status-ready))",
+          scheduled: "hsl(var(--status-scheduled))",
+          posted: "hsl(var(--status-posted))",
+          repurpose: "hsl(var(--status-repurpose))",
+          archived: "hsl(var(--status-archived))",
+        },
+        // Priority colors
+        priority: {
+          high: "hsl(var(--priority-high))",
+          normal: "hsl(var(--priority-normal))",
+          low: "hsl(var(--priority-low))",
+        },
+        // Channel colors
+        channel: {
+          x: "hsl(var(--channel-x))",
+          instagram: "hsl(var(--channel-instagram))",
+          facebook: "hsl(var(--channel-facebook))",
+          linkedin: "hsl(var(--channel-linkedin))",
+          youtube: "hsl(var(--channel-youtube))",
+          blog: "hsl(var(--channel-blog))",
+        },
       },
       borderRadius: {
         lg: "var(--radius)",
@@ -65,25 +89,36 @@ export default {
       },
       keyframes: {
         "accordion-down": {
-          from: {
-            height: "0",
-          },
-          to: {
-            height: "var(--radix-accordion-content-height)",
-          },
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
         },
         "accordion-up": {
-          from: {
-            height: "var(--radix-accordion-content-height)",
-          },
-          to: {
-            height: "0",
-          },
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+        "pulse-glow": {
+          "0%, 100%": { opacity: "1" },
+          "50%": { opacity: "0.6" },
+        },
+        "slide-in-right": {
+          from: { transform: "translateX(100%)" },
+          to: { transform: "translateX(0)" },
+        },
+        "fade-in": {
+          from: { opacity: "0" },
+          to: { opacity: "1" },
         },
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
+        "pulse-glow": "pulse-glow 2s ease-in-out infinite",
+        "slide-in-right": "slide-in-right 0.3s ease-out",
+        "fade-in": "fade-in 0.2s ease-out",
+      },
+      fontFamily: {
+        sans: ["Inter", "system-ui", "sans-serif"],
+        mono: ["JetBrains Mono", "Fira Code", "monospace"],
       },
     },
   },
