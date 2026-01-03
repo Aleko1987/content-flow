@@ -37,29 +37,33 @@ export const NewContentModal: React.FC<NewContentModalProps> = ({ open, onClose 
     notes: '',
   });
   
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!formData.title.trim()) return;
     
-    createContentItem({
-      title: formData.title,
-      hook: formData.hook || null,
-      pillar: formData.pillar || null,
-      format: formData.format || null,
-      priority: parseInt(formData.priority) as Priority,
-      notes: formData.notes || null,
-    });
-    
-    // Reset form
-    setFormData({
-      title: '',
-      hook: '',
-      pillar: '',
-      format: '',
-      priority: '2',
-      notes: '',
-    });
-    
-    onClose();
+    try {
+      await createContentItem({
+        title: formData.title,
+        hook: formData.hook || null,
+        pillar: formData.pillar || null,
+        format: formData.format || null,
+        priority: parseInt(formData.priority) as Priority,
+        notes: formData.notes || null,
+      });
+      
+      // Reset form
+      setFormData({
+        title: '',
+        hook: '',
+        pillar: '',
+        format: '',
+        priority: '2',
+        notes: '',
+      });
+      
+      onClose();
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
   return (

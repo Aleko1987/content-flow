@@ -80,39 +80,59 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
     }
   }, [item]);
   
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!itemId) return;
     
-    updateContentItem(itemId, {
-      title: formData.title,
-      hook: formData.hook || null,
-      pillar: formData.pillar || null,
-      format: formData.format || null,
-      status: formData.status,
-      priority: formData.priority,
-      notes: formData.notes || null,
-    });
+    try {
+      await updateContentItem(itemId, {
+        title: formData.title,
+        hook: formData.hook || null,
+        pillar: formData.pillar || null,
+        format: formData.format || null,
+        status: formData.status,
+        priority: formData.priority,
+        notes: formData.notes || null,
+      });
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
-  const handleAddVariant = (channelKey: ChannelKey) => {
+  const handleAddVariant = async (channelKey: ChannelKey) => {
     if (!itemId) return;
-    createVariant({
-      contentItemId: itemId,
-      channelKey,
-    });
+    try {
+      await createVariant({
+        contentItemId: itemId,
+        channelKey,
+      });
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
-  const handleUpdateVariant = (variantId: string, updates: Partial<ChannelVariant>) => {
-    updateVariant(variantId, updates);
+  const handleUpdateVariant = async (variantId: string, updates: Partial<ChannelVariant>) => {
+    try {
+      await updateVariant(variantId, updates);
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
-  const handleGenerateUtms = (variantId: string) => {
-    generateUtms(variantId, formData.title);
+  const handleGenerateUtms = async (variantId: string) => {
+    try {
+      await generateUtms(variantId, formData.title);
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
-  const handleCreateAllTasks = () => {
+  const handleCreateAllTasks = async () => {
     if (!itemId) return;
-    createTasksForAllChannels(itemId);
+    try {
+      await createTasksForAllChannels(itemId);
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
   if (!item) return null;
@@ -160,7 +180,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                   value={formData.pillar}
                   onValueChange={(value) => {
                     setFormData(prev => ({ ...prev, pillar: value as ContentPillar }));
-                    if (itemId) updateContentItem(itemId, { pillar: value as ContentPillar || null });
+                    if (itemId) updateContentItem(itemId, { pillar: value as ContentPillar || null }).catch(() => {});
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -182,7 +202,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                   value={formData.format}
                   onValueChange={(value) => {
                     setFormData(prev => ({ ...prev, format: value as ContentFormat }));
-                    if (itemId) updateContentItem(itemId, { format: value as ContentFormat || null });
+                    if (itemId) updateContentItem(itemId, { format: value as ContentFormat || null }).catch(() => {});
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -207,7 +227,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                   value={formData.status}
                   onValueChange={(value) => {
                     setFormData(prev => ({ ...prev, status: value as ContentStatus }));
-                    if (itemId) updateContentItem(itemId, { status: value as ContentStatus });
+                    if (itemId) updateContentItem(itemId, { status: value as ContentStatus }).catch(() => {});
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -231,7 +251,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                   onValueChange={(value) => {
                     const priority = parseInt(value) as Priority;
                     setFormData(prev => ({ ...prev, priority }));
-                    if (itemId) updateContentItem(itemId, { priority });
+                    if (itemId) updateContentItem(itemId, { priority }).catch(() => {});
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -307,7 +327,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                           <Button
                             variant="ghost"
                             size="sm"
-                            onClick={() => deleteVariant(variant.id)}
+                            onClick={() => deleteVariant(variant.id).catch(() => {})}
                             className="text-destructive hover:text-destructive"
                           >
                             <Trash2 className="h-4 w-4" />

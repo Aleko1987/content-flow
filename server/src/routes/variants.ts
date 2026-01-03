@@ -27,6 +27,69 @@ router.get('/:id/variants', asyncHandler(async (req: Request, res: Response) => 
   res.json(variants);
 }));
 
+// POST /api/content-ops/content-items/:id/variants
+router.post('/:id/variants', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const {
+    channel_key,
+    caption,
+    hashtags,
+    media_prompt,
+    cta,
+    link_url,
+    utm_campaign,
+    utm_source,
+    utm_medium,
+  } = req.body;
+
+  if (!channel_key) {
+    return res.status(400).json({ error: 'channel_key is required' });
+  }
+
+  // Check if variant already exists
+  const existing = await db
+    .select()
+    .from(channelVariants)
+    .where(
+      and(
+        eq(channelVariants.contentItemId, id),
+        eq(channelVariants.channelKey, channel_key)
+      )
+    )
+    .limit(1);
+
+  if (existing.length > 0) {
+    return res.status(409).json({ error: 'Variant for this content item and channel already exists' });
+  }
+
+  const now = new Date();
+  const newVariant = {
+    id: generateId(),
+    contentItemId: id,
+    channelKey: channel_key,
+    caption: caption || null,
+    hashtags: hashtags || null,
+    mediaPrompt: media_prompt || null,
+    cta: cta || null,
+    linkUrl: link_url || null,
+    utmCampaign: utm_campaign || null,
+    utmSource: utm_source || null,
+    utmMedium: utm_medium || null,
+    createdAt: now,
+    updatedAt: now,
+  };
+
+  try {
+    const inserted = await db.insert(channelVariants).values(newVariant).returning();
+    res.status(201).json(inserted[0]);
+  } catch (error: any) {
+    if (error.code === '23505') { // Unique violation
+      return res.status(409).json({ error: 'Variant for this content item and channel already exists' });
+    }
+    throw error;
+  }
+}));
+
 // PUT /api/content-ops/content-items/:id/variants/:channel_key (upsert)
 router.put('/:id/variants/:channel_key', asyncHandler(async (req: Request, res: Response) => {
   const { id, channel_key } = req.params;
@@ -95,6 +158,27 @@ router.put('/:id/variants/:channel_key', asyncHandler(async (req: Request, res: 
     const inserted = await db.insert(channelVariants).values(newVariant).returning();
     res.status(201).json(inserted[0]);
   }
+}));
+
+// DELETE /api/content-ops/content-items/:id/variants/:channel_key
+router.delete('/:id/variants/:channel_key', asyncHandler(async (req: Request, res: Response) => {
+  const { id, channel_key } = req.params;
+
+  const deleted = await db
+    .delete(channelVariants)
+    .where(
+      and(
+        eq(channelVariants.contentItemId, id),
+        eq(channelVariants.channelKey, channel_key)
+      )
+    )
+    .returning();
+
+  if (deleted.length === 0) {
+    return res.status(404).json({ error: 'Variant not found' });
+  }
+
+  res.status(204).send();
 }));
 
 export default router;

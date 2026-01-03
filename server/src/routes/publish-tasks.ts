@@ -217,6 +217,62 @@ router.post('/:id/log-publish', asyncHandler(async (req: Request, res: Response)
   res.status(201).json({ log: newLog, event });
 }));
 
+// PUT /api/content-ops/publish-tasks/:id
+router.put('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const {
+    content_item_id,
+    channel_key,
+    scheduled_for,
+    state,
+    assignee,
+    checklist,
+  } = req.body;
+
+  const existing = await db
+    .select()
+    .from(publishTasks)
+    .where(eq(publishTasks.id, id))
+    .limit(1);
+
+  if (existing.length === 0) {
+    return res.status(404).json({ error: 'Publish task not found' });
+  }
+
+  const updates: Record<string, unknown> = {};
+  if (content_item_id !== undefined) updates.contentItemId = content_item_id;
+  if (channel_key !== undefined) updates.channelKey = channel_key;
+  if (scheduled_for !== undefined) updates.scheduledFor = scheduled_for ? new Date(scheduled_for) : null;
+  if (state !== undefined) updates.state = state;
+  if (assignee !== undefined) updates.assignee = assignee;
+  if (checklist !== undefined) updates.checklist = checklist;
+  updates.updatedAt = new Date();
+
+  const updated = await db
+    .update(publishTasks)
+    .set(updates)
+    .where(eq(publishTasks.id, id))
+    .returning();
+
+  res.json(updated[0]);
+}));
+
+// DELETE /api/content-ops/publish-tasks/:id
+router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+
+  const deleted = await db
+    .delete(publishTasks)
+    .where(eq(publishTasks.id, id))
+    .returning();
+
+  if (deleted.length === 0) {
+    return res.status(404).json({ error: 'Publish task not found' });
+  }
+
+  res.status(204).send();
+}));
+
 export default router;
 
 

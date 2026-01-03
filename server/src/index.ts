@@ -7,6 +7,7 @@ import channelsRouter from './routes/channels';
 import contentItemsRouter from './routes/content-items';
 import variantsRouter from './routes/variants';
 import publishTasksRouter from './routes/publish-tasks';
+import publishLogsRouter from './routes/publish-logs';
 import seedRouter from './routes/seed';
 
 // Load environment variables
@@ -36,6 +37,7 @@ app.use('/api/content-ops/channels', channelsRouter);
 app.use('/api/content-ops/content-items', contentItemsRouter);
 app.use('/api/content-ops/content-items', variantsRouter);
 app.use('/api/content-ops/publish-tasks', publishTasksRouter);
+app.use('/api/content-ops/publish-logs', publishLogsRouter);
 app.use('/api/content-ops', seedRouter);
 
 // Error handler (must be last)

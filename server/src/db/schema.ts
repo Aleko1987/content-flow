@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, uniqueIndex } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique } from 'drizzle-orm/pg-core';
 
 // Channels table
 export const channels = pgTable('channels', {
@@ -41,7 +41,7 @@ export const channelVariants = pgTable('channel_variants', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => ({
-  uniqueContentChannel: uniqueIndex('unique_content_channel_variant').on(table.contentItemId, table.channelKey),
+  uniqueContentChannel: unique().on(table.contentItemId, table.channelKey),
 }));
 
 // Publish tasks table (unique on content_item_id + channel_key)
@@ -56,7 +56,7 @@ export const publishTasks = pgTable('publish_tasks', {
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => ({
-  uniqueContentChannel: uniqueIndex('unique_content_channel_task').on(table.contentItemId, table.channelKey),
+  uniqueContentChannel: unique().on(table.contentItemId, table.channelKey),
 }));
 
 // Publish logs table

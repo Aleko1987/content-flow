@@ -100,9 +100,13 @@ export const ContentPlanTab: React.FC<ContentPlanTabProps> = ({
     setSelectedItemId(item.id);
   };
   
-  const handleDelete = (id: string, e: React.MouseEvent) => {
+  const handleDelete = async (id: string, e: React.MouseEvent) => {
     e.stopPropagation();
-    deleteContentItem(id);
+    try {
+      await deleteContentItem(id);
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
   return (

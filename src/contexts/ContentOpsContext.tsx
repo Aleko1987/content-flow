@@ -1,4 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
+import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
 import type {
   Channel,
   ChannelKey,
@@ -16,16 +18,31 @@ import type {
   PublishTaskWithDetails,
   PublishLogWithDetails,
 } from '@/types/content-ops';
-import { initializeDemoData, defaultChannels } from '@/data/demo-data';
 
-// Generate UUID
-const generateId = (): string => {
-  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-    const r = (Math.random() * 16) | 0;
-    const v = c === 'x' ? r : (r & 0x3) | 0x8;
-    return v.toString(16);
-  });
-};
+// Helper to convert snake_case API responses to camelCase
+function toCamelCase<T extends Record<string, any>>(obj: T): T {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
+    // Convert date strings to Date objects
+    if ((key.includes('_at') || key.includes('At') || key.includes('_for') || key.includes('For')) && typeof value === 'string') {
+      result[camelKey] = new Date(value);
+    } else {
+      result[camelKey] = value;
+    }
+  }
+  return result as T;
+}
+
+// Helper to convert camelCase to snake_case for API requests
+function toSnakeCase<T extends Record<string, any>>(obj: T): any {
+  const result: any = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = key.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+    result[snakeKey] = value;
+  }
+  return result;
+}
 
 interface ContentOpsState {
   channels: Channel[];
@@ -39,59 +56,133 @@ interface ContentOpsState {
 interface ContentOpsContextType {
   // State
   state: ContentOpsState;
+  loading: boolean;
   
   // Channel operations
   getChannels: () => Channel[];
-  updateChannel: (id: string, updates: Partial<Channel>) => void;
+  updateChannel: (id: string, updates: Partial<Channel>) => Promise<void>;
   
   // Content item operations
   getContentItems: () => ContentItem[];
   getContentItem: (id: string) => ContentItemWithVariants | null;
-  createContentItem: (data: Partial<ContentItem>) => ContentItem;
-  updateContentItem: (id: string, updates: Partial<ContentItem>) => void;
-  deleteContentItem: (id: string) => void;
+  createContentItem: (data: Partial<ContentItem>) => Promise<ContentItem>;
+  updateContentItem: (id: string, updates: Partial<ContentItem>) => Promise<void>;
+  deleteContentItem: (id: string) => Promise<void>;
   
   // Variant operations
   getVariantsForContent: (contentItemId: string) => ChannelVariant[];
-  createVariant: (data: Partial<ChannelVariant>) => ChannelVariant;
-  updateVariant: (id: string, updates: Partial<ChannelVariant>) => void;
-  deleteVariant: (id: string) => void;
-  generateUtms: (variantId: string, contentTitle: string) => void;
+  createVariant: (data: Partial<ChannelVariant>) => Promise<ChannelVariant>;
+  updateVariant: (id: string, updates: Partial<ChannelVariant>) => Promise<void>;
+  deleteVariant: (id: string) => Promise<void>;
+  generateUtms: (variantId: string, contentTitle: string) => Promise<void>;
   
   // Task operations
   getTasks: () => PublishTaskWithDetails[];
   getTasksForContent: (contentItemId: string) => PublishTask[];
-  createTask: (data: Partial<PublishTask>) => PublishTask;
-  createTasksForAllChannels: (contentItemId: string) => PublishTask[];
-  updateTask: (id: string, updates: Partial<PublishTask>) => void;
-  deleteTask: (id: string) => void;
+  createTask: (data: Partial<PublishTask>) => Promise<PublishTask>;
+  createTasksForAllChannels: (contentItemId: string) => Promise<PublishTask[]>;
+  updateTask: (id: string, updates: Partial<PublishTask>) => Promise<void>;
+  deleteTask: (id: string) => Promise<void>;
   
   // Log operations
   getLogs: () => PublishLogWithDetails[];
-  createLog: (data: Partial<PublishLog>) => PublishLog;
+  createLog: (data: Partial<PublishLog>) => Promise<PublishLog>;
   
   // Event operations
   getEvents: () => IntentEvent[];
+  
+  // Refresh operations
+  refreshChannels: () => Promise<void>;
+  refreshContentItems: () => Promise<void>;
+  refreshTasks: () => Promise<void>;
+  refreshLogs: () => Promise<void>;
 }
 
 const ContentOpsContext = createContext<ContentOpsContextType | null>(null);
 
 export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [state, setState] = useState<ContentOpsState>(() => initializeDemoData());
-  
+  const [state, setState] = useState<ContentOpsState>({
+    channels: [],
+    contentItems: [],
+    variants: [],
+    tasks: [],
+    logs: [],
+    events: [],
+  });
+  const [loading, setLoading] = useState(true);
+  const { toast } = useToast();
+
+  // Load initial data
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        setLoading(true);
+        const [channelsData, itemsData, tasksData, logsData] = await Promise.all([
+          apiClient.channels.getAll(),
+          apiClient.contentItems.getAll(),
+          apiClient.publishTasks.getAll(),
+          apiClient.publishLogs.getAll(),
+        ]);
+
+        // Get variants for all content items
+        const variantsPromises = itemsData.map((item: any) =>
+          apiClient.variants.getByContentItem(item.id)
+        );
+        const variantsArrays = await Promise.all(variantsPromises);
+        const allVariants = variantsArrays.flat();
+
+        setState({
+          channels: channelsData.map(toCamelCase),
+          contentItems: itemsData.map(toCamelCase),
+          variants: allVariants.map(toCamelCase),
+          tasks: tasksData.map(toCamelCase),
+          logs: logsData.map(toCamelCase),
+          events: [], // Events are write-only, not loaded
+        });
+      } catch (error) {
+        console.error('Failed to load data:', error);
+        toast({
+          title: 'Error',
+          description: error instanceof Error ? error.message : 'Failed to load data',
+          variant: 'destructive',
+        });
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadData();
+  }, [toast]);
+
   // Channel operations
   const getChannels = useCallback(() => state.channels, [state.channels]);
-  
-  const updateChannel = useCallback((id: string, updates: Partial<Channel>) => {
-    setState(prev => ({
-      ...prev,
-      channels: prev.channels.map(c => c.id === id ? { ...c, ...updates } : c),
-    }));
-  }, []);
-  
+
+  const updateChannel = useCallback(async (id: string, updates: Partial<Channel>) => {
+    try {
+      const channel = state.channels.find(c => c.id === id);
+      if (!channel) throw new Error('Channel not found');
+
+      const apiData = toSnakeCase(updates);
+      const updated = await apiClient.channels.update(channel.key, apiData);
+      const updatedChannel = toCamelCase(updated);
+
+      setState(prev => ({
+        ...prev,
+        channels: prev.channels.map(c => c.id === id ? updatedChannel : c),
+      }));
+    } catch (error) {
+      console.error('Failed to update channel:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update channel',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [state.channels, toast]);
+
   // Content item operations
   const getContentItems = useCallback(() => state.contentItems, [state.contentItems]);
-  
+
   const getContentItem = useCallback((id: string): ContentItemWithVariants | null => {
     const item = state.contentItems.find(i => i.id === id);
     if (!item) return null;
@@ -102,109 +193,166 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       tasks: state.tasks.filter(t => t.contentItemId === id),
     };
   }, [state.contentItems, state.variants, state.tasks]);
-  
-  const createContentItem = useCallback((data: Partial<ContentItem>): ContentItem => {
-    const newItem: ContentItem = {
-      id: generateId(),
-      title: data.title || 'Untitled',
-      hook: data.hook || null,
-      pillar: data.pillar || null,
-      format: data.format || null,
-      status: data.status || 'draft',
-      priority: data.priority || 2,
-      owner: data.owner || null,
-      notes: data.notes || null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    setState(prev => ({
-      ...prev,
-      contentItems: [...prev.contentItems, newItem],
-    }));
-    
-    return newItem;
-  }, []);
-  
-  const updateContentItem = useCallback((id: string, updates: Partial<ContentItem>) => {
-    setState(prev => ({
-      ...prev,
-      contentItems: prev.contentItems.map(i => 
-        i.id === id ? { ...i, ...updates, updatedAt: new Date() } : i
-      ),
-    }));
-  }, []);
-  
-  const deleteContentItem = useCallback((id: string) => {
-    setState(prev => ({
-      ...prev,
-      contentItems: prev.contentItems.filter(i => i.id !== id),
-      variants: prev.variants.filter(v => v.contentItemId !== id),
-      tasks: prev.tasks.filter(t => t.contentItemId !== id),
-    }));
-  }, []);
-  
+
+  const createContentItem = useCallback(async (data: Partial<ContentItem>): Promise<ContentItem> => {
+    try {
+      const apiData = toSnakeCase(data);
+      const created = await apiClient.contentItems.create(apiData);
+      const newItem = toCamelCase(created);
+
+      setState(prev => ({
+        ...prev,
+        contentItems: [...prev.contentItems, newItem],
+      }));
+
+      return newItem;
+    } catch (error) {
+      console.error('Failed to create content item:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create content item',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
+  const updateContentItem = useCallback(async (id: string, updates: Partial<ContentItem>) => {
+    try {
+      const apiData = toSnakeCase(updates);
+      const updated = await apiClient.contentItems.update(id, apiData);
+      const updatedItem = toCamelCase(updated);
+
+      setState(prev => ({
+        ...prev,
+        contentItems: prev.contentItems.map(i => i.id === id ? updatedItem : i),
+      }));
+    } catch (error) {
+      console.error('Failed to update content item:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update content item',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
+  const deleteContentItem = useCallback(async (id: string) => {
+    try {
+      await apiClient.contentItems.delete(id);
+      setState(prev => ({
+        ...prev,
+        contentItems: prev.contentItems.filter(i => i.id !== id),
+        variants: prev.variants.filter(v => v.contentItemId !== id),
+        tasks: prev.tasks.filter(t => t.contentItemId !== id),
+      }));
+    } catch (error) {
+      console.error('Failed to delete content item:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete content item',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
   // Variant operations
   const getVariantsForContent = useCallback((contentItemId: string) => 
     state.variants.filter(v => v.contentItemId === contentItemId), 
     [state.variants]
   );
-  
-  const createVariant = useCallback((data: Partial<ChannelVariant>): ChannelVariant => {
-    const newVariant: ChannelVariant = {
-      id: generateId(),
-      contentItemId: data.contentItemId!,
-      channelKey: data.channelKey!,
-      caption: data.caption || null,
-      hashtags: data.hashtags || null,
-      mediaPrompt: data.mediaPrompt || null,
-      cta: data.cta || null,
-      linkUrl: data.linkUrl || null,
-      utmCampaign: data.utmCampaign || null,
-      utmSource: data.utmSource || null,
-      utmMedium: data.utmMedium || null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    setState(prev => ({
-      ...prev,
-      variants: [...prev.variants, newVariant],
-    }));
-    
-    return newVariant;
-  }, []);
-  
-  const updateVariant = useCallback((id: string, updates: Partial<ChannelVariant>) => {
-    setState(prev => ({
-      ...prev,
-      variants: prev.variants.map(v => 
-        v.id === id ? { ...v, ...updates, updatedAt: new Date() } : v
-      ),
-    }));
-  }, []);
-  
-  const deleteVariant = useCallback((id: string) => {
-    setState(prev => ({
-      ...prev,
-      variants: prev.variants.filter(v => v.id !== id),
-    }));
-  }, []);
-  
-  const generateUtms = useCallback((variantId: string, contentTitle: string) => {
+
+  const createVariant = useCallback(async (data: Partial<ChannelVariant>): Promise<ChannelVariant> => {
+    try {
+      if (!data.contentItemId || !data.channelKey) {
+        throw new Error('contentItemId and channelKey are required');
+      }
+
+      const apiData = toSnakeCase({
+        channel_key: data.channelKey,
+        ...data,
+      });
+      const created = await apiClient.variants.create(data.contentItemId, apiData);
+      const newVariant = toCamelCase(created);
+
+      setState(prev => ({
+        ...prev,
+        variants: [...prev.variants, newVariant],
+      }));
+
+      return newVariant;
+    } catch (error) {
+      console.error('Failed to create variant:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create variant',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
+  const updateVariant = useCallback(async (id: string, updates: Partial<ChannelVariant>) => {
+    try {
+      const variant = state.variants.find(v => v.id === id);
+      if (!variant) throw new Error('Variant not found');
+
+      const apiData = toSnakeCase(updates);
+      const updated = await apiClient.variants.upsert(variant.contentItemId, variant.channelKey, apiData);
+      const updatedVariant = toCamelCase(updated);
+
+      setState(prev => ({
+        ...prev,
+        variants: prev.variants.map(v => v.id === id ? updatedVariant : v),
+      }));
+    } catch (error) {
+      console.error('Failed to update variant:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update variant',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [state.variants, toast]);
+
+  const deleteVariant = useCallback(async (id: string) => {
+    try {
+      const variant = state.variants.find(v => v.id === id);
+      if (!variant) throw new Error('Variant not found');
+
+      await apiClient.variants.delete(variant.contentItemId, variant.channelKey);
+      setState(prev => ({
+        ...prev,
+        variants: prev.variants.filter(v => v.id !== id),
+      }));
+    } catch (error) {
+      console.error('Failed to delete variant:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete variant',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [state.variants, toast]);
+
+  const generateUtms = useCallback(async (variantId: string, contentTitle: string) => {
     const variant = state.variants.find(v => v.id === variantId);
     if (!variant) return;
     
     const month = new Date().toLocaleString('en', { month: 'short' }).toLowerCase();
     const slug = contentTitle.toLowerCase().replace(/[^a-z0-9]+/g, '-').slice(0, 30);
     
-    updateVariant(variantId, {
+    await updateVariant(variantId, {
       utmCampaign: `${slug}-${month}`,
       utmSource: variant.channelKey,
       utmMedium: 'social',
     });
   }, [state.variants, updateVariant]);
-  
+
   // Task operations
   const getTasks = useCallback((): PublishTaskWithDetails[] => {
     return state.tasks.map(task => ({
@@ -214,74 +362,101 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       log: state.logs.find(l => l.publishTaskId === task.id) || null,
     })).filter(t => t.contentItem);
   }, [state.tasks, state.contentItems, state.variants, state.logs]);
-  
+
   const getTasksForContent = useCallback((contentItemId: string) => 
     state.tasks.filter(t => t.contentItemId === contentItemId),
     [state.tasks]
   );
-  
-  const createTask = useCallback((data: Partial<PublishTask>): PublishTask => {
-    const channel = state.channels.find(c => c.key === data.channelKey);
-    
-    const newTask: PublishTask = {
-      id: generateId(),
-      contentItemId: data.contentItemId!,
-      channelKey: data.channelKey!,
-      scheduledFor: data.scheduledFor || null,
-      state: data.state || 'todo',
-      assignee: data.assignee || null,
-      checklist: data.checklist || channel?.defaultChecklist || [],
-      createdAt: new Date(),
-      updatedAt: new Date(),
-    };
-    
-    setState(prev => ({
-      ...prev,
-      tasks: [...prev.tasks, newTask],
-    }));
-    
-    return newTask;
-  }, [state.channels]);
-  
-  const createTasksForAllChannels = useCallback((contentItemId: string): PublishTask[] => {
-    const enabledChannels = state.channels.filter(c => c.enabled);
-    const existingTaskChannels = state.tasks
-      .filter(t => t.contentItemId === contentItemId)
-      .map(t => t.channelKey);
-    
-    const newTasks: PublishTask[] = [];
-    
-    enabledChannels.forEach(channel => {
-      if (!existingTaskChannels.includes(channel.key)) {
-        const task = createTask({
-          contentItemId,
-          channelKey: channel.key,
-          checklist: channel.defaultChecklist,
-        });
-        newTasks.push(task);
+
+  const createTask = useCallback(async (data: Partial<PublishTask>): Promise<PublishTask> => {
+    try {
+      if (!data.contentItemId || !data.channelKey) {
+        throw new Error('contentItemId and channelKey are required');
       }
-    });
-    
-    return newTasks;
-  }, [state.channels, state.tasks, createTask]);
-  
-  const updateTask = useCallback((id: string, updates: Partial<PublishTask>) => {
-    setState(prev => ({
-      ...prev,
-      tasks: prev.tasks.map(t => 
-        t.id === id ? { ...t, ...updates, updatedAt: new Date() } : t
-      ),
-    }));
-  }, []);
-  
-  const deleteTask = useCallback((id: string) => {
-    setState(prev => ({
-      ...prev,
-      tasks: prev.tasks.filter(t => t.id !== id),
-      logs: prev.logs.filter(l => l.publishTaskId !== id),
-    }));
-  }, []);
-  
+
+      const apiData = toSnakeCase(data);
+      const created = await apiClient.publishTasks.create(apiData);
+      const newTask = toCamelCase(created);
+
+      setState(prev => ({
+        ...prev,
+        tasks: [...prev.tasks, newTask],
+      }));
+
+      return newTask;
+    } catch (error) {
+      console.error('Failed to create task:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create task',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
+  const createTasksForAllChannels = useCallback(async (contentItemId: string): Promise<PublishTask[]> => {
+    try {
+      const result = await apiClient.publishTasks.bulkCreate(contentItemId);
+      const newTasks = (result.tasks || []).map(toCamelCase);
+
+      setState(prev => ({
+        ...prev,
+        tasks: [...prev.tasks, ...newTasks],
+      }));
+
+      return newTasks;
+    } catch (error) {
+      console.error('Failed to create tasks:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create tasks',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
+  const updateTask = useCallback(async (id: string, updates: Partial<PublishTask>) => {
+    try {
+      const apiData = toSnakeCase(updates);
+      const updated = await apiClient.publishTasks.update(id, apiData);
+      const updatedTask = toCamelCase(updated);
+
+      setState(prev => ({
+        ...prev,
+        tasks: prev.tasks.map(t => t.id === id ? updatedTask : t),
+      }));
+    } catch (error) {
+      console.error('Failed to update task:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to update task',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
+  const deleteTask = useCallback(async (id: string) => {
+    try {
+      await apiClient.publishTasks.delete(id);
+      setState(prev => ({
+        ...prev,
+        tasks: prev.tasks.filter(t => t.id !== id),
+        logs: prev.logs.filter(l => l.publishTaskId !== id),
+      }));
+    } catch (error) {
+      console.error('Failed to delete task:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete task',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
   // Log operations
   const getLogs = useCallback((): PublishLogWithDetails[] => {
     return state.logs.map(log => {
@@ -295,52 +470,98 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       };
     }).filter(l => l.task && l.contentItem);
   }, [state.logs, state.tasks, state.contentItems]);
-  
-  const createLog = useCallback((data: Partial<PublishLog>): PublishLog => {
-    const task = state.tasks.find(t => t.id === data.publishTaskId);
-    
-    const newLog: PublishLog = {
-      id: generateId(),
-      publishTaskId: data.publishTaskId!,
-      postedAt: data.postedAt || new Date(),
-      postUrl: data.postUrl || null,
-      reach: data.reach || null,
-      clicks: data.clicks || null,
-      notes: data.notes || null,
-    };
-    
-    // Create intent event
-    const newEvent: IntentEvent = {
-      id: generateId(),
-      eventType: 'post_published',
-      source: 'content_ops',
-      channelKey: task?.channelKey || null,
-      contentItemId: task?.contentItemId || null,
-      payload: {
-        postUrl: newLog.postUrl,
-        scheduledFor: task?.scheduledFor?.toISOString(),
-      },
-      createdAt: new Date(),
-    };
-    
-    // Update task state to posted
-    setState(prev => ({
-      ...prev,
-      logs: [...prev.logs, newLog],
-      events: [...prev.events, newEvent],
-      tasks: prev.tasks.map(t => 
-        t.id === data.publishTaskId ? { ...t, state: 'posted' as PublishState, updatedAt: new Date() } : t
-      ),
-    }));
-    
-    return newLog;
-  }, [state.tasks]);
-  
+
+  const createLog = useCallback(async (data: Partial<PublishLog>): Promise<PublishLog> => {
+    try {
+      if (!data.publishTaskId) {
+        throw new Error('publishTaskId is required');
+      }
+
+      // Use log-publish endpoint which handles task state update and intent event
+      const apiData = toSnakeCase({
+        posted_at: data.postedAt?.toISOString(),
+        post_url: data.postUrl,
+        reach: data.reach,
+        clicks: data.clicks,
+        notes: data.notes,
+      });
+      const result = await apiClient.publishTasks.logPublish(data.publishTaskId, apiData);
+      const newLog = toCamelCase(result.log);
+
+      // Update task state to posted
+      setState(prev => ({
+        ...prev,
+        logs: [...prev.logs, newLog],
+        tasks: prev.tasks.map(t => 
+          t.id === data.publishTaskId ? { ...t, state: 'posted' as PublishState } : t
+        ),
+      }));
+
+      return newLog;
+    } catch (error) {
+      console.error('Failed to create log:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to create log',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [toast]);
+
   // Event operations
   const getEvents = useCallback(() => state.events, [state.events]);
-  
+
+  // Refresh operations
+  const refreshChannels = useCallback(async () => {
+    try {
+      const channelsData = await apiClient.channels.getAll();
+      setState(prev => ({ ...prev, channels: channelsData.map(toCamelCase) }));
+    } catch (error) {
+      console.error('Failed to refresh channels:', error);
+    }
+  }, []);
+
+  const refreshContentItems = useCallback(async () => {
+    try {
+      const itemsData = await apiClient.contentItems.getAll();
+      const variantsPromises = itemsData.map((item: any) =>
+        apiClient.variants.getByContentItem(item.id)
+      );
+      const variantsArrays = await Promise.all(variantsPromises);
+      const allVariants = variantsArrays.flat();
+
+      setState(prev => ({
+        ...prev,
+        contentItems: itemsData.map(toCamelCase),
+        variants: allVariants.map(toCamelCase),
+      }));
+    } catch (error) {
+      console.error('Failed to refresh content items:', error);
+    }
+  }, []);
+
+  const refreshTasks = useCallback(async () => {
+    try {
+      const tasksData = await apiClient.publishTasks.getAll();
+      setState(prev => ({ ...prev, tasks: tasksData.map(toCamelCase) }));
+    } catch (error) {
+      console.error('Failed to refresh tasks:', error);
+    }
+  }, []);
+
+  const refreshLogs = useCallback(async () => {
+    try {
+      const logsData = await apiClient.publishLogs.getAll();
+      setState(prev => ({ ...prev, logs: logsData.map(toCamelCase) }));
+    } catch (error) {
+      console.error('Failed to refresh logs:', error);
+    }
+  }, []);
+
   const value: ContentOpsContextType = {
     state,
+    loading,
     getChannels,
     updateChannel,
     getContentItems,
@@ -362,8 +583,12 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     getLogs,
     createLog,
     getEvents,
+    refreshChannels,
+    refreshContentItems,
+    refreshTasks,
+    refreshLogs,
   };
-  
+
   return (
     <ContentOpsContext.Provider value={value}>
       {children}

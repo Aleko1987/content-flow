@@ -25,23 +25,35 @@ export const SettingsTab: React.FC = () => {
   const [editingChecklist, setEditingChecklist] = useState<string | null>(null);
   const [newChecklistItem, setNewChecklistItem] = useState('');
   
-  const handleToggleChannel = (id: string, enabled: boolean) => {
-    updateChannel(id, { enabled });
+  const handleToggleChannel = async (id: string, enabled: boolean) => {
+    try {
+      await updateChannel(id, { enabled });
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
-  const handleAddChecklistItem = (channel: Channel) => {
+  const handleAddChecklistItem = async (channel: Channel) => {
     if (!newChecklistItem.trim()) return;
     
-    updateChannel(channel.id, {
-      defaultChecklist: [...channel.defaultChecklist, newChecklistItem.trim()],
-    });
-    setNewChecklistItem('');
+    try {
+      await updateChannel(channel.id, {
+        defaultChecklist: [...channel.defaultChecklist, newChecklistItem.trim()],
+      });
+      setNewChecklistItem('');
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
-  const handleRemoveChecklistItem = (channel: Channel, index: number) => {
-    updateChannel(channel.id, {
-      defaultChecklist: channel.defaultChecklist.filter((_, i) => i !== index),
-    });
+  const handleRemoveChecklistItem = async (channel: Channel, index: number) => {
+    try {
+      await updateChannel(channel.id, {
+        defaultChecklist: channel.defaultChecklist.filter((_, i) => i !== index),
+      });
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
   return (

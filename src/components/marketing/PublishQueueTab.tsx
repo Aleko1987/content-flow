@@ -77,23 +77,31 @@ export const PublishQueueTab: React.FC = () => {
         setShowLogModal(true);
       }
     } else {
-      updateTask(taskId, { state: newState });
+      updateTask(taskId, { state: newState }).catch(() => {
+        // Error handled by context toast
+      });
     }
   };
   
-  const handleLogPublish = () => {
+  const handleLogPublish = async () => {
     if (!selectedTask) return;
     
-    createLog({
-      publishTaskId: selectedTask.id,
-      postUrl: logData.postUrl || null,
-      postedAt: new Date(logData.postedAt),
-      notes: logData.notes || null,
-    });
-    
-    setShowLogModal(false);
-    setSelectedTask(null);
-    setLogData({ postUrl: '', notes: '', postedAt: new Date().toISOString().slice(0, 16) });
+    try {
+      await createLog({
+        publishTaskId: selectedTask.id,
+        postUrl: logData.postUrl || null,
+        postedAt: new Date(logData.postedAt),
+        reach: logData.reach ? parseInt(logData.reach) : null,
+        clicks: logData.clicks ? parseInt(logData.clicks) : null,
+        notes: logData.notes || null,
+      });
+      
+      setShowLogModal(false);
+      setSelectedTask(null);
+      setLogData({ postUrl: '', notes: '', postedAt: new Date().toISOString().slice(0, 16), reach: '', clicks: '' });
+    } catch (error) {
+      // Error handled by context toast
+    }
   };
   
   const handleCardClick = (task: PublishTaskWithDetails) => {
@@ -237,7 +245,7 @@ export const PublishQueueTab: React.FC = () => {
                   value={selectedTask.scheduledFor?.toISOString().slice(0, 16) || ''}
                   onChange={(e) => updateTask(selectedTask.id, { 
                     scheduledFor: e.target.value ? new Date(e.target.value) : null 
-                  })}
+                  }).catch(() => {})}
                   className="bg-secondary/50"
                 />
               </div>
