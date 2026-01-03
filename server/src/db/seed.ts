@@ -32,6 +32,7 @@ async function seed() {
     { id: generateId(), key: 'linkedin', name: 'LinkedIn', enabled: true, defaultChecklist: ['Professional tone check', 'Add relevant hashtags', 'Tag relevant people'] },
     { id: generateId(), key: 'youtube', name: 'YouTube', enabled: true, defaultChecklist: ['Upload thumbnail', 'Write description', 'Add tags'] },
     { id: generateId(), key: 'website_blog', name: 'Website Blog', enabled: true, defaultChecklist: ['SEO meta tags', 'Internal links', 'Featured image'] },
+    { id: generateId(), key: 'whatsapp_status', name: 'WhatsApp Status', enabled: true, defaultChecklist: ['Select media', 'Write caption', 'Post manually'] },
   ];
 
   await db.insert(channels).values(defaultChannels);

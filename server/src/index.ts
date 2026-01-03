@@ -8,6 +8,7 @@ import contentItemsRouter from './routes/content-items';
 import variantsRouter from './routes/variants';
 import publishTasksRouter from './routes/publish-tasks';
 import publishLogsRouter from './routes/publish-logs';
+import mediaAssetsRouter from './routes/media-assets';
 import seedRouter from './routes/seed';
 
 // Load environment variables
@@ -38,6 +39,7 @@ app.use('/api/content-ops/content-items', contentItemsRouter);
 app.use('/api/content-ops/content-items', variantsRouter);
 app.use('/api/content-ops/publish-tasks', publishTasksRouter);
 app.use('/api/content-ops/publish-logs', publishLogsRouter);
+app.use('/api/content-ops/media-assets', mediaAssetsRouter);
 app.use('/api/content-ops', seedRouter);
 
 // Error handler (must be last)

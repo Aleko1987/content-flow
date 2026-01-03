@@ -172,5 +172,35 @@ export const apiClient = {
         method: 'DELETE',
       }).then(() => undefined),
   },
+
+  // Media Assets
+  mediaAssets: {
+    presign: (data: unknown) =>
+      fetch(`${API_BASE_URL}/media-assets/presign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    complete: (data: unknown) =>
+      fetch(`${API_BASE_URL}/media-assets/complete`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      }).then(handleResponse),
+    getAll: (params?: Record<string, string>) => {
+      const searchParams = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value) searchParams.append(key, value);
+        });
+      }
+      const query = searchParams.toString();
+      return fetch(`${API_BASE_URL}/media-assets${query ? `?${query}` : ''}`).then(handleResponse);
+    },
+    delete: (id: string) =>
+      fetch(`${API_BASE_URL}/media-assets/${id}`, {
+        method: 'DELETE',
+      }).then(() => undefined),
+  },
 };
 

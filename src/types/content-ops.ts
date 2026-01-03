@@ -5,7 +5,7 @@ export type ContentPillar = 'product' | 'educational' | 'proof' | 'meme' | 'offe
 export type ContentFormat = 'post' | 'reel' | 'short' | 'carousel' | 'article' | 'ad';
 export type Priority = 1 | 2 | 3; // 1=high, 2=normal, 3=low
 export type PublishState = 'todo' | 'scheduled' | 'posted' | 'skipped';
-export type ChannelKey = 'x' | 'instagram' | 'facebook' | 'linkedin' | 'youtube' | 'website_blog';
+export type ChannelKey = 'x' | 'instagram' | 'facebook' | 'linkedin' | 'youtube' | 'website_blog' | 'whatsapp_status';
 
 export interface Channel {
   id: string;
@@ -30,6 +30,18 @@ export interface ContentItem {
   updatedAt: Date;
 }
 
+export interface MediaAsset {
+  id: string;
+  storageProvider: string;
+  bucket: string;
+  objectKey: string;
+  publicUrl: string | null;
+  mimeType: string | null;
+  sizeBytes: number | null;
+  sha256: string | null;
+  createdAt: Date;
+}
+
 export interface ChannelVariant {
   id: string;
   contentItemId: string;
@@ -37,6 +49,7 @@ export interface ChannelVariant {
   caption: string | null;
   hashtags: string | null;
   mediaPrompt: string | null;
+  mediaAssetId: string | null;
   cta: string | null;
   linkUrl: string | null;
   utmCampaign: string | null;

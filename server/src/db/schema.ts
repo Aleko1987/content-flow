@@ -25,6 +25,19 @@ export const contentItems = pgTable('content_items', {
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
 
+// Media assets table (R2-backed)
+export const mediaAssets = pgTable('media_assets', {
+  id: text('id').primaryKey(),
+  storageProvider: varchar('storage_provider', { length: 50 }).notNull().default('r2'),
+  bucket: varchar('bucket', { length: 255 }).notNull(),
+  objectKey: varchar('object_key', { length: 500 }).notNull(),
+  publicUrl: text('public_url'),
+  mimeType: varchar('mime_type', { length: 100 }),
+  sizeBytes: integer('size_bytes'),
+  sha256: varchar('sha256', { length: 64 }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
 // Channel variants table (unique on content_item_id + channel_key)
 export const channelVariants = pgTable('channel_variants', {
   id: text('id').primaryKey(),
@@ -33,6 +46,7 @@ export const channelVariants = pgTable('channel_variants', {
   caption: text('caption'),
   hashtags: text('hashtags'),
   mediaPrompt: text('media_prompt'),
+  mediaAssetId: text('media_asset_id').references(() => mediaAssets.id, { onDelete: 'set null' }),
   cta: text('cta'),
   linkUrl: text('link_url'),
   utmCampaign: text('utm_campaign'),

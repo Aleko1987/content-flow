@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Calendar, Clock, GripVertical, ExternalLink } from 'lucide-react';
+import { Calendar, Clock, GripVertical, ExternalLink, Copy, Check, MessageSquare } from 'lucide-react';
 import type { PublishTaskWithDetails, PublishState, ChannelKey } from '@/types/content-ops';
 
 const stateColors: Record<PublishState, string> = {
@@ -29,19 +29,41 @@ const channelColors: Record<ChannelKey, string> = {
   linkedin: 'bg-channel-linkedin/20 text-channel-linkedin border-channel-linkedin/30',
   youtube: 'bg-channel-youtube/20 text-channel-youtube border-channel-youtube/30',
   website_blog: 'bg-channel-blog/20 text-channel-blog border-channel-blog/30',
+  whatsapp_status: 'bg-green-500/20 text-green-600 border-green-500/30',
 };
 
 export const PublishQueueTab: React.FC = () => {
   const { getTasks, updateTask, createLog } = useContentOps();
   const [selectedTask, setSelectedTask] = useState<PublishTaskWithDetails | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
+  const [showWhatsAppGuide, setShowWhatsAppGuide] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const [logData, setLogData] = useState({
     postUrl: '',
     notes: '',
     postedAt: new Date().toISOString().slice(0, 16),
+    reach: '',
+    clicks: '',
   });
   
   const tasks = getTasks();
+  
+  // Get WhatsApp Status due tasks
+  const whatsappDueTasks = useMemo(() => {
+    return tasks.filter(
+      task => 
+        task.channelKey === 'whatsapp_status' &&
+        task.state === 'scheduled' &&
+        task.scheduledFor &&
+        new Date(task.scheduledFor) <= new Date()
+    );
+  }, [tasks]);
+  
+  const handleCopy = async (text: string, type: string) => {
+    await navigator.clipboard.writeText(text);
+    setCopied(type);
+    setTimeout(() => setCopied(null), 2000);
+  };
   
   const groupedTasks = useMemo(() => {
     const groups: Record<PublishState, PublishTaskWithDetails[]> = {
@@ -112,10 +134,115 @@ export const PublishQueueTab: React.FC = () => {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-foreground">Publish Queue</h2>
-        <p className="text-sm text-muted-foreground">
-          Drag tasks between columns to update status
-        </p>
+        <div className="flex items-center gap-2">
+          {whatsappDueTasks.length > 0 && (
+            <Badge variant="outline" className="bg-green-500/20 text-green-600">
+              {whatsappDueTasks.length} WhatsApp Status due
+            </Badge>
+          )}
+          <p className="text-sm text-muted-foreground">
+            Drag tasks between columns to update status
+          </p>
+        </div>
       </div>
+      
+      {/* WhatsApp Status Due View */}
+      {whatsappDueTasks.length > 0 && (
+        <div className="border border-border rounded-lg p-4 bg-secondary/20">
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="font-semibold text-foreground">WhatsApp Status - Due Today</h3>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowWhatsAppGuide(true)}
+            >
+              <MessageSquare className="h-4 w-4 mr-2" />
+              Instructions
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {whatsappDueTasks.map(task => {
+              const variant = task.variant;
+              const mediaAsset = variant?.mediaAssetId ? { publicUrl: '' } : null; // TODO: Load media asset
+              return (
+                <div
+                  key={task.id}
+                  className="p-4 border border-border rounded-lg bg-card"
+                >
+                  <div className="flex items-start justify-between mb-3">
+                    <div>
+                      <p className="font-medium text-sm">{task.contentItem.title}</p>
+                      <Badge variant="outline" className="mt-1">
+                        {task.channelKey}
+                      </Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTask(task);
+                        setShowLogModal(true);
+                      }}
+                    >
+                      Mark Posted
+                    </Button>
+                  </div>
+                  
+                  {variant && (
+                    <div className="space-y-2">
+                      {variant.mediaAssetId && mediaAsset?.publicUrl && (
+                        <div className="mb-2">
+                          <img
+                            src={mediaAsset.publicUrl}
+                            alt="Media"
+                            className="w-full h-32 object-cover rounded"
+                          />
+                        </div>
+                      )}
+                      {variant.caption && (
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1 p-2 bg-secondary/50 rounded text-sm">
+                            {variant.caption}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCopy(variant.caption || '', 'caption')}
+                          >
+                            {copied === 'caption' ? (
+                              <Check className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                      {variant.hashtags && (
+                        <div className="flex items-center gap-2">
+                          <div className="flex-1 p-2 bg-secondary/50 rounded text-sm">
+                            {variant.hashtags}
+                          </div>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={() => handleCopy(variant.hashtags || '', 'hashtags')}
+                          >
+                            {copied === 'hashtags' ? (
+                              <Check className="h-4 w-4 text-green-600" />
+                            ) : (
+                              <Copy className="h-4 w-4" />
+                            )}
+                          </Button>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
       
       {/* Kanban Board */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -274,16 +401,18 @@ export const PublishQueueTab: React.FC = () => {
           </DialogHeader>
           
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="postUrl">Post URL *</Label>
-              <Input
-                id="postUrl"
-                placeholder="https://..."
-                value={logData.postUrl}
-                onChange={(e) => setLogData(prev => ({ ...prev, postUrl: e.target.value }))}
-                className="bg-secondary/50"
-              />
-            </div>
+            {selectedTask?.channelKey !== 'whatsapp_status' && (
+              <div className="space-y-2">
+                <Label htmlFor="postUrl">Post URL</Label>
+                <Input
+                  id="postUrl"
+                  placeholder="https://..."
+                  value={logData.postUrl}
+                  onChange={(e) => setLogData(prev => ({ ...prev, postUrl: e.target.value }))}
+                  className="bg-secondary/50"
+                />
+              </div>
+            )}
             
             <div className="space-y-2">
               <Label htmlFor="postedAt">Posted At</Label>
@@ -297,13 +426,16 @@ export const PublishQueueTab: React.FC = () => {
             </div>
             
             <div className="space-y-2">
-              <Label htmlFor="notes">Notes</Label>
+              <Label htmlFor="notes">
+                Notes {selectedTask?.channelKey === 'whatsapp_status' && '(required)'}
+              </Label>
               <Textarea
                 id="notes"
-                placeholder="Any notes about this publish..."
+                placeholder={selectedTask?.channelKey === 'whatsapp_status' ? 'e.g., Status posted manually' : 'Any notes about this publish...'}
                 value={logData.notes}
                 onChange={(e) => setLogData(prev => ({ ...prev, notes: e.target.value }))}
                 className="bg-secondary/50"
+                required={selectedTask?.channelKey === 'whatsapp_status'}
               />
             </div>
           </div>
@@ -315,6 +447,33 @@ export const PublishQueueTab: React.FC = () => {
             <Button onClick={handleLogPublish} className="glow-accent">
               Log Publish
             </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+      
+      {/* WhatsApp Instructions Dialog */}
+      <Dialog open={showWhatsAppGuide} onOpenChange={setShowWhatsAppGuide}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>WhatsApp Status Posting Instructions</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <ol className="list-decimal list-inside space-y-2 text-sm">
+              <li>Open WhatsApp on your phone</li>
+              <li>Go to the Status tab</li>
+              <li>Tap the camera icon or your profile picture</li>
+              <li>Select the media from your gallery (or take a new photo/video)</li>
+              <li>Add the caption by tapping the text icon</li>
+              <li>Paste the caption and hashtags (use the copy buttons)</li>
+              <li>Tap the send button to post your status</li>
+              <li>Return here and click "Mark as Posted" to log the publish</li>
+            </ol>
+            <p className="text-xs text-muted-foreground">
+              Note: WhatsApp Status cannot be automated. This workflow helps you post manually and track it.
+            </p>
+          </div>
+          <DialogFooter>
+            <Button onClick={() => setShowWhatsAppGuide(false)}>Got it</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

@@ -21,6 +21,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
 import { Plus, Wand2, Trash2 } from 'lucide-react';
+import { MediaPicker } from './MediaPicker';
 import type { ContentStatus, ContentPillar, ContentFormat, Priority, ChannelKey, ChannelVariant } from '@/types/content-ops';
 
 interface ContentItemDrawerProps {
@@ -36,6 +37,7 @@ const channelLabels: Record<ChannelKey, string> = {
   linkedin: 'LinkedIn',
   youtube: 'YouTube',
   website_blog: 'Website Blog',
+  whatsapp_status: 'WhatsApp Status',
 };
 
 export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, open, onClose }) => {
@@ -336,6 +338,13 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                       </div>
                     </CardHeader>
                     <CardContent className="space-y-3">
+                      {(variant.channelKey === 'whatsapp_status' || variant.channelKey === 'instagram') && (
+                        <MediaPicker
+                          value={variant.mediaAssetId || null}
+                          onChange={(mediaAssetId) => handleUpdateVariant(variant.id, { mediaAssetId })}
+                          mimeType={variant.channelKey === 'whatsapp_status' ? 'image/*,video/*' : 'image/*'}
+                        />
+                      )}
                       <div className="space-y-2">
                         <Label className="text-xs">Caption</Label>
                         <Textarea

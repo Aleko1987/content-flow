@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { db } from '../db';
-import { publishTasks, publishLogs, intentEvents, channels, contentItems } from '../db/schema';
-import { eq, and, or, gte, lte, inArray } from 'drizzle-orm';
+import { publishTasks, publishLogs, intentEvents, channels, contentItems, channelVariants } from '../db/schema';
+import { eq, and, or, gte, lte, inArray, sql } from 'drizzle-orm';
 import { asyncHandler } from '../middleware/error-handler';
 import type { Request, Response } from 'express';
 
@@ -18,7 +18,7 @@ const generateId = (): string => {
 
 // GET /api/content-ops/publish-tasks
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
-  const { state, channel_key, date_from, date_to } = req.query;
+  const { state, channel_key, date_from, date_to, due } = req.query;
 
   let query = db.select().from(publishTasks);
 
@@ -40,6 +40,18 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 
   if (date_to) {
     conditions.push(lte(publishTasks.createdAt, new Date(date_to as string)));
+  }
+
+  // Due filter: scheduled_for <= now and state is scheduled (not posted)
+  if (due === 'true') {
+    const now = new Date();
+    conditions.push(
+      and(
+        eq(publishTasks.state, 'scheduled'),
+        sql`${publishTasks.scheduledFor} IS NOT NULL`,
+        lte(publishTasks.scheduledFor, now)
+      )!
+    );
   }
 
   if (conditions.length > 0) {
@@ -196,7 +208,19 @@ router.post('/:id/log-publish', asyncHandler(async (req: Request, res: Response)
     .set({ state: 'posted', updatedAt: now })
     .where(eq(publishTasks.id, id));
 
-  // Create intent event
+  // Get variant for additional context
+  const variant = await db
+    .select()
+    .from(channelVariants)
+    .where(
+      and(
+        eq(channelVariants.contentItemId, task[0].contentItemId),
+        eq(channelVariants.channelKey, task[0].channelKey)
+      )
+    )
+    .limit(1);
+
+  // Create intent event with enhanced payload
   const event = {
     id: generateId(),
     eventType: 'post_published',
@@ -204,10 +228,18 @@ router.post('/:id/log-publish', asyncHandler(async (req: Request, res: Response)
     channelKey: task[0].channelKey,
     contentItemId: task[0].contentItemId,
     payload: {
-      postUrl: newLog.postUrl,
-      scheduledFor: task[0].scheduledFor?.toISOString(),
-      reach: newLog.reach,
-      clicks: newLog.clicks,
+      channel_key: task[0].channelKey,
+      url: newLog.postUrl || null,
+      scheduled_for: task[0].scheduledFor?.toISOString() || null,
+      published_at: newLog.postedAt.toISOString(),
+      content_item_id: task[0].contentItemId,
+      channel_variant_id: variant[0]?.id || null,
+      publish_task_id: id,
+      metrics: {
+        reach: newLog.reach || null,
+        clicks: newLog.clicks || null,
+      },
+      notes: newLog.notes || null,
     },
     createdAt: now,
   };
