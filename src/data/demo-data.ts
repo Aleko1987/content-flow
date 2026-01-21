@@ -114,6 +114,7 @@ const generateDemoVariants = (contentItems: ContentItem[], channels: Channel[]):
         caption: `${item.hook || item.title} #${item.pillar || 'content'}`,
         hashtags: `#marketing #${channel.key} #content`,
         mediaPrompt: item.format === 'post' ? 'Eye-catching visual with brand colors' : null,
+        mediaAssetId: null,
         cta: 'Learn more at our website',
         linkUrl: 'https://example.com',
         utmCampaign: null,

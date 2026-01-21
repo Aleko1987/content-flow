@@ -16,6 +16,7 @@ const channelIcons: Record<ChannelKey, string> = {
   linkedin: '💼',
   youtube: '▶️',
   website_blog: '📝',
+  whatsapp_status: '📱',
 };
 
 export const SettingsTab: React.FC = () => {

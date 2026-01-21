@@ -20,18 +20,76 @@ import type {
 } from '@/types/content-ops';
 
 // Helper to convert snake_case API responses to camelCase
-function toCamelCase<T extends Record<string, any>>(obj: T): T {
-  const result: any = {};
-  for (const [key, value] of Object.entries(obj)) {
-    const camelKey = key.replace(/_([a-z])/g, (_, letter) => letter.toUpperCase());
-    // Convert date strings to Date objects
-    if ((key.includes('_at') || key.includes('At') || key.includes('_for') || key.includes('For')) && typeof value === 'string') {
-      result[camelKey] = new Date(value);
-    } else {
-      result[camelKey] = value;
-    }
-  }
-  return result as T;
+function toCamelCaseChannel(obj: any): Channel {
+  return {
+    id: obj.id,
+    key: obj.key as ChannelKey,
+    name: obj.name,
+    enabled: obj.enabled,
+    defaultChecklist: obj.default_checklist || [],
+    createdAt: new Date(obj.created_at),
+  };
+}
+
+function toCamelCaseContentItem(obj: any): ContentItem {
+  return {
+    id: obj.id,
+    title: obj.title,
+    hook: obj.hook,
+    pillar: obj.pillar as ContentPillar | null,
+    format: obj.format as ContentFormat | null,
+    status: obj.status as ContentStatus,
+    priority: obj.priority as Priority,
+    owner: obj.owner,
+    notes: obj.notes,
+    createdAt: new Date(obj.created_at),
+    updatedAt: new Date(obj.updated_at),
+  };
+}
+
+function toCamelCaseVariant(obj: any): ChannelVariant {
+  return {
+    id: obj.id,
+    contentItemId: obj.content_item_id,
+    channelKey: obj.channel_key as ChannelKey,
+    caption: obj.caption,
+    hashtags: obj.hashtags,
+    mediaPrompt: obj.media_prompt,
+    mediaAssetId: obj.media_asset_id,
+    cta: obj.cta,
+    linkUrl: obj.link_url,
+    utmCampaign: obj.utm_campaign,
+    utmSource: obj.utm_source,
+    utmMedium: obj.utm_medium,
+    createdAt: new Date(obj.created_at),
+    updatedAt: new Date(obj.updated_at),
+  };
+}
+
+function toCamelCaseTask(obj: any): PublishTask {
+  return {
+    id: obj.id,
+    contentItemId: obj.content_item_id,
+    channelKey: obj.channel_key as ChannelKey,
+    scheduledFor: obj.scheduled_for ? new Date(obj.scheduled_for) : null,
+    state: obj.state as PublishState,
+    assignee: obj.assignee,
+    checklist: obj.checklist || [],
+    createdAt: new Date(obj.created_at),
+    updatedAt: new Date(obj.updated_at),
+  };
+}
+
+function toCamelCaseLog(obj: any): PublishLog {
+  return {
+    id: obj.id,
+    publishTaskId: obj.publish_task_id,
+    postedAt: new Date(obj.posted_at),
+    postUrl: obj.post_url,
+    reach: obj.reach,
+    clicks: obj.clicks,
+    notes: obj.notes,
+  };
 }
 
 // Helper to convert camelCase to snake_case for API requests
@@ -125,18 +183,18 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         ]);
 
         // Get variants for all content items
-        const variantsPromises = itemsData.map((item: any) =>
+        const variantsPromises = itemsData.map((item) =>
           apiClient.variants.getByContentItem(item.id)
         );
         const variantsArrays = await Promise.all(variantsPromises);
         const allVariants = variantsArrays.flat();
 
         setState({
-          channels: channelsData.map(toCamelCase),
-          contentItems: itemsData.map(toCamelCase),
-          variants: allVariants.map(toCamelCase),
-          tasks: tasksData.map(toCamelCase),
-          logs: logsData.map(toCamelCase),
+          channels: channelsData.map(toCamelCaseChannel),
+          contentItems: itemsData.map(toCamelCaseContentItem),
+          variants: allVariants.map(toCamelCaseVariant),
+          tasks: tasksData.map(toCamelCaseTask),
+          logs: logsData.map(toCamelCaseLog),
           events: [], // Events are write-only, not loaded
         });
       } catch (error) {
@@ -163,7 +221,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       const apiData = toSnakeCase(updates);
       const updated = await apiClient.channels.update(channel.key, apiData);
-      const updatedChannel = toCamelCase(updated);
+      const updatedChannel = toCamelCaseChannel(updated);
 
       setState(prev => ({
         ...prev,
@@ -198,7 +256,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       const apiData = toSnakeCase(data);
       const created = await apiClient.contentItems.create(apiData);
-      const newItem = toCamelCase(created);
+      const newItem = toCamelCaseContentItem(created);
 
       setState(prev => ({
         ...prev,
@@ -221,7 +279,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       const apiData = toSnakeCase(updates);
       const updated = await apiClient.contentItems.update(id, apiData);
-      const updatedItem = toCamelCase(updated);
+      const updatedItem = toCamelCaseContentItem(updated);
 
       setState(prev => ({
         ...prev,
@@ -275,7 +333,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         ...data,
       });
       const created = await apiClient.variants.create(data.contentItemId, apiData);
-      const newVariant = toCamelCase(created);
+      const newVariant = toCamelCaseVariant(created);
 
       setState(prev => ({
         ...prev,
@@ -301,7 +359,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       const apiData = toSnakeCase(updates);
       const updated = await apiClient.variants.upsert(variant.contentItemId, variant.channelKey, apiData);
-      const updatedVariant = toCamelCase(updated);
+      const updatedVariant = toCamelCaseVariant(updated);
 
       setState(prev => ({
         ...prev,
@@ -376,7 +434,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       const apiData = toSnakeCase(data);
       const created = await apiClient.publishTasks.create(apiData);
-      const newTask = toCamelCase(created);
+      const newTask = toCamelCaseTask(created);
 
       setState(prev => ({
         ...prev,
@@ -398,7 +456,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const createTasksForAllChannels = useCallback(async (contentItemId: string): Promise<PublishTask[]> => {
     try {
       const result = await apiClient.publishTasks.bulkCreate(contentItemId);
-      const newTasks = (result.tasks || []).map(toCamelCase);
+      const newTasks = (result.tasks || []).map(toCamelCaseTask);
 
       setState(prev => ({
         ...prev,
@@ -421,7 +479,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     try {
       const apiData = toSnakeCase(updates);
       const updated = await apiClient.publishTasks.update(id, apiData);
-      const updatedTask = toCamelCase(updated);
+      const updatedTask = toCamelCaseTask(updated);
 
       setState(prev => ({
         ...prev,
@@ -486,7 +544,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         notes: data.notes,
       });
       const result = await apiClient.publishTasks.logPublish(data.publishTaskId, apiData);
-      const newLog = toCamelCase(result.log);
+      const newLog = toCamelCaseLog(result.log);
 
       // Update task state to posted
       setState(prev => ({
@@ -516,7 +574,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshChannels = useCallback(async () => {
     try {
       const channelsData = await apiClient.channels.getAll();
-      setState(prev => ({ ...prev, channels: channelsData.map(toCamelCase) }));
+      setState(prev => ({ ...prev, channels: channelsData.map(toCamelCaseChannel) }));
     } catch (error) {
       console.error('Failed to refresh channels:', error);
     }
@@ -525,7 +583,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshContentItems = useCallback(async () => {
     try {
       const itemsData = await apiClient.contentItems.getAll();
-      const variantsPromises = itemsData.map((item: any) =>
+      const variantsPromises = itemsData.map((item) =>
         apiClient.variants.getByContentItem(item.id)
       );
       const variantsArrays = await Promise.all(variantsPromises);
@@ -533,8 +591,8 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
 
       setState(prev => ({
         ...prev,
-        contentItems: itemsData.map(toCamelCase),
-        variants: allVariants.map(toCamelCase),
+        contentItems: itemsData.map(toCamelCaseContentItem),
+        variants: allVariants.map(toCamelCaseVariant),
       }));
     } catch (error) {
       console.error('Failed to refresh content items:', error);
@@ -544,7 +602,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshTasks = useCallback(async () => {
     try {
       const tasksData = await apiClient.publishTasks.getAll();
-      setState(prev => ({ ...prev, tasks: tasksData.map(toCamelCase) }));
+      setState(prev => ({ ...prev, tasks: tasksData.map(toCamelCaseTask) }));
     } catch (error) {
       console.error('Failed to refresh tasks:', error);
     }
@@ -553,7 +611,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   const refreshLogs = useCallback(async () => {
     try {
       const logsData = await apiClient.publishLogs.getAll();
-      setState(prev => ({ ...prev, logs: logsData.map(toCamelCase) }));
+      setState(prev => ({ ...prev, logs: logsData.map(toCamelCaseLog) }));
     } catch (error) {
       console.error('Failed to refresh logs:', error);
     }
