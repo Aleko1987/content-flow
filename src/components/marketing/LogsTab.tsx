@@ -28,6 +28,7 @@ const channelColors: Record<ChannelKey, string> = {
   linkedin: 'bg-channel-linkedin/20 text-channel-linkedin border-channel-linkedin/30',
   youtube: 'bg-channel-youtube/20 text-channel-youtube border-channel-youtube/30',
   website_blog: 'bg-channel-blog/20 text-channel-blog border-channel-blog/30',
+  whatsapp_status: 'bg-green-500/20 text-green-500 border-green-500/30',
 };
 
 export const LogsTab: React.FC = () => {

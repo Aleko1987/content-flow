@@ -9,6 +9,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/u
 import { Upload, X, Image as ImageIcon } from 'lucide-react';
 import type { MediaAsset } from '@/types/content-ops';
 
+interface PresignResponse {
+  uploadUrl: string;
+  objectKey: string;
+  bucket: string;
+  publicUrl: string;
+}
+
 interface MediaPickerProps {
   value: string | null;
   onChange: (mediaAssetId: string | null) => void;
@@ -43,7 +50,7 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({ value, onChange, mimeT
       const params: Record<string, string> = {};
       if (search) params.search = search;
       if (mimeType) params.type = mimeType.split('/')[0]; // image, video, etc.
-      const data = await apiClient.mediaAssets.getAll(params);
+      const data = await apiClient.mediaAssets.getAll(params) as MediaAsset[];
       setAssets(data);
     } catch (error) {
       console.error('Failed to load assets:', error);
@@ -63,7 +70,7 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({ value, onChange, mimeT
         filename: file.name,
         mime_type: file.type,
         size_bytes: file.size,
-      });
+      }) as PresignResponse;
 
       // Upload to R2
       const xhr = new XMLHttpRequest();
@@ -95,7 +102,7 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({ value, onChange, mimeT
         mime_type: file.type,
         size_bytes: file.size,
         public_url: presignData.publicUrl,
-      });
+      }) as MediaAsset;
 
       setAssets(prev => [asset, ...prev]);
       onChange(asset.id);
@@ -251,4 +258,3 @@ export const MediaPicker: React.FC<MediaPickerProps> = ({ value, onChange, mimeT
     </div>
   );
 };
-
