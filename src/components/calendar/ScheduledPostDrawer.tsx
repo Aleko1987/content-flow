@@ -7,7 +7,7 @@ import { Label } from '@/components/ui/label';
 import { useToast } from '@/hooks/use-toast';
 import { PlatformMultiSelect } from './PlatformMultiSelect';
 import { MediaDropzone } from './MediaDropzone';
-import { scheduledPostService } from '@/services/scheduledPostService';
+import { scheduledPostApiService } from '@/services/scheduledPostApiService';
 import type { ScheduledPost, Platform, MediaItem } from '@/types/scheduled-post';
 import { Trash2 } from 'lucide-react';
 
@@ -52,7 +52,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     }
   }, [post, defaultDate, defaultTime, open]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!date || !time) {
       toast({ title: 'Error', description: 'Date and time are required', variant: 'destructive' });
       return;
@@ -61,29 +61,31 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     setSaving(true);
     try {
       if (post) {
-        scheduledPostService.update(post.id, { scheduledDate: date, scheduledTime: time, caption, platforms, media });
+        await scheduledPostApiService.update(post.id, { scheduledDate: date, scheduledTime: time, caption, platforms, media });
         toast({ title: 'Success', description: 'Post updated' });
       } else {
-        scheduledPostService.create({ scheduledDate: date, scheduledTime: time, caption, platforms, media });
+        await scheduledPostApiService.create({ scheduledDate: date, scheduledTime: time, caption, platforms, media });
         toast({ title: 'Success', description: 'Post scheduled' });
       }
       onSave();
       onClose();
     } catch (error) {
+      console.error('Save failed:', error);
       toast({ title: 'Error', description: 'Failed to save', variant: 'destructive' });
     } finally {
       setSaving(false);
     }
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!post) return;
     try {
-      scheduledPostService.remove(post.id);
+      await scheduledPostApiService.remove(post.id);
       toast({ title: 'Deleted', description: 'Post removed' });
       onSave();
       onClose();
     } catch (error) {
+      console.error('Delete failed:', error);
       toast({ title: 'Error', description: 'Failed to delete', variant: 'destructive' });
     }
   };

@@ -2,10 +2,10 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, addWeeks, subWeeks } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { ChevronLeft, ChevronRight, Plus } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Loader2 } from 'lucide-react';
 import { ScheduledPostCard } from './ScheduledPostCard';
 import { ScheduledPostDrawer } from './ScheduledPostDrawer';
-import { scheduledPostService } from '@/services/scheduledPostService';
+import { scheduledPostApiService } from '@/services/scheduledPostApiService';
 import type { ScheduledPost } from '@/types/scheduled-post';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -17,14 +17,40 @@ export const CalendarPage: React.FC = () => {
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [currentDate, setCurrentDate] = useState(new Date());
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
+  const [loading, setLoading] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [draggedPostId, setDraggedPostId] = useState<string | null>(null);
 
-  const loadPosts = useCallback(() => {
-    setPosts(scheduledPostService.getAll());
-  }, []);
+  // Calculate visible date range based on view mode
+  const getVisibleRange = useCallback(() => {
+    if (viewMode === 'month') {
+      const start = startOfWeek(startOfMonth(currentDate));
+      const end = endOfWeek(endOfMonth(currentDate));
+      return { start, end };
+    } else {
+      const start = startOfWeek(currentDate);
+      const end = endOfWeek(currentDate);
+      return { start, end };
+    }
+  }, [currentDate, viewMode]);
+
+  const loadPosts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const { start, end } = getVisibleRange();
+      const startStr = format(start, 'yyyy-MM-dd');
+      const endStr = format(end, 'yyyy-MM-dd');
+      const data = await scheduledPostApiService.getByDateRange(startStr, endStr);
+      setPosts(data);
+    } catch (error) {
+      console.error('Failed to load posts:', error);
+      toast({ title: 'Error', description: 'Failed to load scheduled posts', variant: 'destructive' });
+    } finally {
+      setLoading(false);
+    }
+  }, [getVisibleRange, toast]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
 
@@ -37,17 +63,11 @@ export const CalendarPage: React.FC = () => {
   };
 
   const getCalendarDays = () => {
-    if (viewMode === 'month') {
-      const start = startOfWeek(startOfMonth(currentDate));
-      const end = endOfWeek(endOfMonth(currentDate));
-      const days: Date[] = [];
-      let day = start;
-      while (day <= end) { days.push(day); day = addDays(day, 1); }
-      return days;
-    } else {
-      const start = startOfWeek(currentDate);
-      return Array.from({ length: 7 }, (_, i) => addDays(start, i));
-    }
+    const { start, end } = getVisibleRange();
+    const days: Date[] = [];
+    let day = start;
+    while (day <= end) { days.push(day); day = addDays(day, 1); }
+    return days;
   };
 
   const days = getCalendarDays();
@@ -69,7 +89,7 @@ export const CalendarPage: React.FC = () => {
     e.dataTransfer.effectAllowed = 'move';
   };
 
-  const handleDrop = (e: React.DragEvent, date: Date) => {
+  const handleDrop = async (e: React.DragEvent, date: Date) => {
     e.preventDefault();
     const dateStr = format(date, 'yyyy-MM-dd');
     
@@ -84,8 +104,8 @@ export const CalendarPage: React.FC = () => {
     // Handle post drag
     if (draggedPostId) {
       try {
-        scheduledPostService.moveToDate(draggedPostId, dateStr);
-        loadPosts();
+        await scheduledPostApiService.moveToDate(draggedPostId, dateStr);
+        await loadPosts();
         toast({ title: 'Moved', description: 'Post rescheduled' });
       } catch {
         toast({ title: 'Error', description: 'Failed to move', variant: 'destructive' });
@@ -109,6 +129,7 @@ export const CalendarPage: React.FC = () => {
         </div>
         
         <div className="flex items-center gap-3">
+          {loading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           <ToggleGroup type="single" value={viewMode} onValueChange={(v) => v && setViewMode(v as ViewMode)}>
             <ToggleGroupItem value="month">Month</ToggleGroupItem>
             <ToggleGroupItem value="week">Week</ToggleGroupItem>
