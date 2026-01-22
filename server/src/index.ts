@@ -10,6 +10,7 @@ import publishTasksRouter from './routes/publish-tasks';
 import publishLogsRouter from './routes/publish-logs';
 import mediaAssetsRouter from './routes/media-assets';
 import seedRouter from './routes/seed';
+import scheduledPostsRouter from './routes/scheduled-posts';
 
 // Load environment variables
 dotenv.config();
@@ -41,6 +42,9 @@ app.use('/api/content-ops/publish-tasks', publishTasksRouter);
 app.use('/api/content-ops/publish-logs', publishLogsRouter);
 app.use('/api/content-ops/media-assets', mediaAssetsRouter);
 app.use('/api/content-ops', seedRouter);
+
+// Scheduled Posts API (Calendar feature)
+app.use('/api/scheduled-posts', scheduledPostsRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);

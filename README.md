@@ -1,73 +1,91 @@
-# Welcome to your Lovable project
+# Content Flow - Marketing Content Operations Platform
 
-## Project info
+A marketing content operations platform for planning, scheduling, and publishing content across multiple social media channels.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Quick Start
 
-## How can I edit this code?
+### Prerequisites
+- Node.js 18+
+- Neon Postgres database
 
-There are several ways of editing your application.
+### Environment Setup
 
-**Use Lovable**
+1. Copy environment files:
+```bash
+cp .env.example .env
+cp server/.env.example server/.env
+```
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+2. Configure `server/.env`:
+```
+DATABASE_URL=postgresql://user:password@your-neon-host/database?sslmode=require
+PORT=3001
+```
 
-Changes made via Lovable will be committed automatically to this repo.
+3. Configure `.env` (frontend):
+```
+VITE_API_URL=http://localhost:3001
+```
 
-**Use your preferred IDE**
+### Database Setup
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+```bash
+cd server
+npm install
+npm run db:migrate    # Run migrations
+npm run db:seed       # (Optional) Seed content ops demo data
+```
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
+### Running the App
 
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+**Terminal 1 - Backend:**
+```bash
+cd server
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+**Terminal 2 - Frontend:**
+```bash
+npm run dev
+```
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+The app will be available at `http://localhost:5173`.
 
-**Use GitHub Codespaces**
+## Project Structure
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+See `AI_FILEMAP.md` for detailed file organization and `AI_CONTEXT.md` for architecture documentation.
 
-## What technologies are used for this project?
+## API Endpoints
 
-This project is built with:
+### Scheduled Posts (Calendar)
+- `GET /api/scheduled-posts?from=YYYY-MM-DD&to=YYYY-MM-DD` - Fetch posts in range
+- `POST /api/scheduled-posts` - Create post with media
+- `PUT /api/scheduled-posts/:id` - Update post
+- `DELETE /api/scheduled-posts/:id` - Delete post
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+### Content Ops
+- See `API_INTEGRATION.md` for full content ops API documentation
 
-## How can I deploy this project?
+## Tech Stack
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+- **Frontend**: React + Vite + TypeScript + Tailwind + shadcn/ui
+- **Backend**: Express + Drizzle ORM + Neon Postgres
+- **Deployment**: Render (planned)
 
-## Can I connect a custom domain to my Lovable project?
+## Features
 
-Yes, you can!
+- **Content Planning**: Create and manage content items with lifecycle tracking
+- **Calendar Scheduling**: Visual month/week calendar with drag-and-drop
+- **Multi-Platform**: Support for LinkedIn, X, Instagram, Facebook, TikTok, YouTube Shorts
+- **Media Attachments**: Drag-and-drop images and videos
+- **Publish Queue**: Kanban-style workflow management
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+---
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+## Lovable Development
+
+**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+
+Changes made via Lovable will be committed automatically to this repo.
+
+For more info on custom domains: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)

@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index } from 'drizzle-orm/pg-core';
 
 // Channels table
 export const channels = pgTable('channels', {
@@ -93,5 +93,35 @@ export const intentEvents = pgTable('intent_events', {
   contentItemId: text('content_item_id'),
   payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
   createdAt: timestamp('created_at').notNull().defaultNow(),
+});
+
+// ============================================
+// SCHEDULED POSTS (Calendar Feature)
+// ============================================
+
+// Scheduled posts table
+export const scheduledPosts = pgTable('scheduled_posts', {
+  id: text('id').primaryKey(),
+  title: text('title'),
+  caption: text('caption'),
+  scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
+  platforms: jsonb('platforms').$type<string[]>().notNull().default([]),
+  status: varchar('status', { length: 50 }).notNull().default('planned'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  scheduledAtIdx: index('scheduled_posts_scheduled_at_idx').on(table.scheduledAt),
+}));
+
+// Scheduled post media table
+export const scheduledPostMedia = pgTable('scheduled_post_media', {
+  id: text('id').primaryKey(),
+  scheduledPostId: text('scheduled_post_id').notNull().references(() => scheduledPosts.id, { onDelete: 'cascade' }),
+  type: varchar('type', { length: 20 }).notNull(), // 'image' | 'video'
+  fileName: text('file_name').notNull(),
+  mimeType: varchar('mime_type', { length: 100 }).notNull(),
+  size: integer('size').notNull(),
+  storageUrl: text('storage_url'), // null for now, frontend uses object URLs
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
 
