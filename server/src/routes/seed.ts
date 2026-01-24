@@ -5,8 +5,8 @@ import type { Request, Response } from 'express';
 
 const router = Router();
 
-// POST /api/content-ops/seed-demo
-router.post('/seed-demo', asyncHandler(async (req: Request, res: Response) => {
+// POST /api/content-ops/seed
+router.post('/seed', asyncHandler(async (req: Request, res: Response) => {
   try {
     await seed();
     res.json({ message: 'Demo data seeded successfully' });

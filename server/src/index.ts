@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import * as dotenv from 'dotenv';
 import { corsMiddleware } from './middleware/cors';

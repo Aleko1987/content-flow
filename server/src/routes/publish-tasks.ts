@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { db } from '../db';
-import { publishTasks, publishLogs, intentEvents, channels, contentItems, channelVariants } from '../db/schema';
+import { db } from '../db/index.js';
+import { publishTasks, publishLogs, intentEvents, channels, contentItems, channelVariants } from '../db/schema.js';
 import { eq, and, or, gte, lte, inArray, sql } from 'drizzle-orm';
-import { asyncHandler } from '../middleware/error-handler';
+import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
 
 const router = Router();
@@ -111,7 +111,10 @@ router.post('/bulk-create', asyncHandler(async (req: Request, res: Response) => 
 
   // Get enabled channels
   const enabledChannels = await db
-    .select()
+    .select({
+      key: channels.key,
+      defaultChecklist: channels.defaultChecklist,
+    })
     .from(channels)
     .where(eq(channels.enabled, true));
 
@@ -134,7 +137,7 @@ router.post('/bulk-create', asyncHandler(async (req: Request, res: Response) => 
       scheduledFor: null,
       state: 'todo' as const,
       assignee: null,
-      checklist: [...channel.defaultChecklist],
+      checklist: [...(channel.defaultChecklist ?? [])],
       createdAt: now,
       updatedAt: now,
     }));
