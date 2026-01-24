@@ -1,8 +1,6 @@
+import "dotenv/config";
 import { db } from './index';
 import { channels, contentItems, channelVariants, publishTasks, publishLogs, intentEvents } from './schema';
-import * as dotenv from 'dotenv';
-
-dotenv.config();
 
 // Generate UUID
 const generateId = (): string => {
