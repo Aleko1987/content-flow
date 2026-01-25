@@ -17,7 +17,7 @@ import scheduledPostsRouter from './routes/scheduled-posts';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 10000;
+const PORT = Number(process.env.PORT ?? 10000);
 
 // Middleware
 app.use(corsMiddleware);
