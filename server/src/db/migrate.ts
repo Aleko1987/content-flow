@@ -1,7 +1,10 @@
-import "dotenv/config";
+import { loadEnv } from './env';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import { Pool } from '@neondatabase/serverless';
 import { migrate } from 'drizzle-orm/neon-serverless/migrator';
+
+// Load environment variables from server/.env
+loadEnv();
 
 if (!process.env.DATABASE_URL) {
   throw new Error('DATABASE_URL environment variable is required');

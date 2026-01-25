@@ -1,4 +1,7 @@
-import "dotenv/config";
+// Load environment variables from server/.env
+import { loadEnv } from './env';
+loadEnv();
+
 import { db } from './index';
 import { channels, contentItems, channelVariants, publishTasks, publishLogs, intentEvents } from './schema';
 
