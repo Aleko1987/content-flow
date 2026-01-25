@@ -17,7 +17,7 @@ import scheduledPostsRouter from './routes/scheduled-posts';
 dotenv.config();
 
 const app = express();
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT || 10000;
 
 // Middleware
 app.use(corsMiddleware);
@@ -51,7 +51,7 @@ app.use('/api/scheduled-posts', scheduledPostsRouter);
 app.use(errorHandler);
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, '0.0.0.0', () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
 });
