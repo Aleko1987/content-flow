@@ -1,10 +1,10 @@
-import cors from 'cors';
+import cors, { type CorsOptions } from 'cors';
 import type { Request, Response, NextFunction } from 'express';
 
 const allowedOrigins = process.env.CORS_ORIGINS?.split(',') || ['http://localhost:8080'];
 
 export const corsMiddleware = cors({
-  origin: (origin, callback) => {
+  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
     // Allow requests with no origin (like mobile apps or curl requests)
     if (!origin) return callback(null, true);
     
@@ -17,6 +17,6 @@ export const corsMiddleware = cors({
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-});
+} as CorsOptions);
 
 

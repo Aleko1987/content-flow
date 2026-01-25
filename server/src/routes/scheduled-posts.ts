@@ -1,4 +1,4 @@
-import { Router } from 'express';
+import { Router, type Request, type Response, type NextFunction } from 'express';
 import { db } from '../db';
 import { scheduledPosts, scheduledPostMedia } from '../db/schema';
 import { eq, and, gte, lte } from 'drizzle-orm';
@@ -48,7 +48,7 @@ const generateId = (): string => {
 };
 
 // GET /api/scheduled-posts?from=YYYY-MM-DD&to=YYYY-MM-DD
-router.get('/', async (req, res, next) => {
+router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { from, to } = req.query;
     
@@ -122,7 +122,7 @@ router.get('/', async (req, res, next) => {
 });
 
 // POST /api/scheduled-posts
-router.post('/', async (req, res, next) => {
+router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = createScheduledPostSchema.safeParse(req.body);
     
@@ -195,7 +195,7 @@ router.post('/', async (req, res, next) => {
 });
 
 // PUT /api/scheduled-posts/:id
-router.put('/:id', async (req, res, next) => {
+router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
     const parsed = updateScheduledPostSchema.safeParse(req.body);
@@ -282,7 +282,7 @@ router.put('/:id', async (req, res, next) => {
 });
 
 // DELETE /api/scheduled-posts/:id
-router.delete('/:id', async (req, res, next) => {
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
 

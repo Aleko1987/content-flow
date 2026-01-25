@@ -6,20 +6,20 @@ export interface ApiError {
 }
 
 export const errorHandler = (
-  err: Error | ApiError,
+  err: unknown,
   req: Request,
   res: Response,
   next: NextFunction
 ) => {
   console.error('Error:', err);
 
-  if ('error' in err) {
+  if (err && typeof err === 'object' && 'error' in err) {
     return res.status(400).json(err);
   }
 
   res.status(500).json({
     error: 'Internal server error',
-    details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    details: process.env.NODE_ENV === 'development' && err instanceof Error ? err.message : undefined,
   });
 };
 
