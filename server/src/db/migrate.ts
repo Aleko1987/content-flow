@@ -1,4 +1,4 @@
-import { loadEnv } from './env';
+import { loadEnv } from './env.js';
 import { drizzle } from 'drizzle-orm/neon-serverless';
 import { Pool } from '@neondatabase/serverless';
 import { migrate } from 'drizzle-orm/neon-serverless/migrator';

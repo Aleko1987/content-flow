@@ -1,9 +1,9 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
-import { db } from '../db';
-import { scheduledPosts, scheduledPostMedia } from '../db/schema';
+import { db } from '../db/index.js';
+import { scheduledPosts, scheduledPostMedia } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
 import { z } from 'zod';
-import { logger } from '../utils/logger';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 

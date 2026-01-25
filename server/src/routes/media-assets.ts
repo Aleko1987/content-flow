@@ -1,10 +1,10 @@
 import { Router } from 'express';
-import { db } from '../db';
-import { mediaAssets } from '../db/schema';
+import { db } from '../db/index.js';
+import { mediaAssets } from '../db/schema.js';
 import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { eq, and, or, like, lte } from 'drizzle-orm';
-import { asyncHandler } from '../middleware/error-handler';
+import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
 
 const router = Router();

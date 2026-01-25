@@ -1,9 +1,9 @@
 // Load environment variables from server/.env
-import { loadEnv } from './env';
+import { loadEnv } from './env.js';
 loadEnv();
 
-import { db } from './index';
-import { channels, contentItems, channelVariants, publishTasks, publishLogs, intentEvents } from './schema';
+import { db } from './index.js';
+import { channels, contentItems, channelVariants, publishTasks, publishLogs, intentEvents } from './schema.js';
 
 // Generate UUID
 const generateId = (): string => {

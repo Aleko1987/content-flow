@@ -1,17 +1,17 @@
 import 'dotenv/config';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import * as dotenv from 'dotenv';
-import { corsMiddleware } from './middleware/cors';
-import { errorHandler } from './middleware/error-handler';
-import { logger } from './utils/logger';
-import channelsRouter from './routes/channels';
-import contentItemsRouter from './routes/content-items';
-import variantsRouter from './routes/variants';
-import publishTasksRouter from './routes/publish-tasks';
-import publishLogsRouter from './routes/publish-logs';
-import mediaAssetsRouter from './routes/media-assets';
-import seedRouter from './routes/seed';
-import scheduledPostsRouter from './routes/scheduled-posts';
+import { corsMiddleware } from './middleware/cors.js';
+import { errorHandler } from './middleware/error-handler.js';
+import { logger } from './utils/logger.js';
+import channelsRouter from './routes/channels.js';
+import contentItemsRouter from './routes/content-items.js';
+import variantsRouter from './routes/variants.js';
+import publishTasksRouter from './routes/publish-tasks.js';
+import publishLogsRouter from './routes/publish-logs.js';
+import mediaAssetsRouter from './routes/media-assets.js';
+import seedRouter from './routes/seed.js';
+import scheduledPostsRouter from './routes/scheduled-posts.js';
 
 // Load environment variables
 dotenv.config();

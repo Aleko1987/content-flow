@@ -30,7 +30,7 @@ type AsyncRequestHandler = (
 ) => Promise<unknown> | unknown;
 
 export const asyncHandler = (fn: AsyncRequestHandler): RequestHandler => {
-  return (req, res, next) => {
+  return (req: Request, res: Response, next: NextFunction) => {
     Promise.resolve(fn(req, res, next)).catch(next);
   };
 };

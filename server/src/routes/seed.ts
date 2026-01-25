@@ -1,6 +1,6 @@
 import { Router } from 'express';
-import { seed } from '../db/seed';
-import { asyncHandler } from '../middleware/error-handler';
+import { seed } from '../db/seed.js';
+import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
 
 const router = Router();

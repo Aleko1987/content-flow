@@ -1,8 +1,8 @@
 import { Router } from 'express';
-import { db } from '../db';
-import { publishLogs } from '../db/schema';
+import { db } from '../db/index.js';
+import { publishLogs } from '../db/schema.js';
 import { eq, and, gte, lte } from 'drizzle-orm';
-import { asyncHandler } from '../middleware/error-handler';
+import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
 
 const router = Router();
