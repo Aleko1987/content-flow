@@ -1,7 +1,8 @@
 // Scheduled Post API Service - Backend-backed persistence
 import type { ScheduledPost, ScheduledPostInput, MediaItem, Platform } from '@/types/scheduled-post';
 
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:3001';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com';
+const API_FULL_URL = `${API_BASE_URL}/api/content-ops`;
 
 // Helper to convert frontend MediaItem to API format
 const mediaToApi = (media: MediaItem[]) => 
@@ -46,7 +47,7 @@ const combineDateTime = (date: string, time: string): string => {
 // Get posts for a date range
 const getByDateRange = async (startDate: string, endDate: string): Promise<ScheduledPost[]> => {
   const response = await fetch(
-    `${API_BASE}/api/scheduled-posts?from=${startDate}&to=${endDate}`
+    `${API_FULL_URL}/scheduled-posts?from=${startDate}&to=${endDate}`
   );
   
   if (!response.ok) {
@@ -80,7 +81,7 @@ const getByDate = async (date: string): Promise<ScheduledPost[]> => {
 const create = async (input: ScheduledPostInput): Promise<ScheduledPost> => {
   const scheduledAt = combineDateTime(input.scheduledDate, input.scheduledTime);
   
-  const response = await fetch(`${API_BASE}/api/scheduled-posts`, {
+  const response = await fetch(`${API_FULL_URL}/scheduled-posts`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -124,7 +125,7 @@ const update = async (id: string, input: Partial<ScheduledPostInput>): Promise<S
     }
   }
   
-  const response = await fetch(`${API_BASE}/api/scheduled-posts/${id}`, {
+  const response = await fetch(`${API_FULL_URL}/scheduled-posts/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -141,7 +142,7 @@ const update = async (id: string, input: Partial<ScheduledPostInput>): Promise<S
 
 // Delete a post
 const remove = async (id: string): Promise<void> => {
-  const response = await fetch(`${API_BASE}/api/scheduled-posts/${id}`, {
+  const response = await fetch(`${API_FULL_URL}/scheduled-posts/${id}`, {
     method: 'DELETE',
   });
   

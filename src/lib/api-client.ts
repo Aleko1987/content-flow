@@ -1,5 +1,6 @@
 // API Client for Content Ops Backend
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api/content-ops';
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com';
+const API_FULL_URL = `${API_BASE_URL}/api/content-ops`;
 
 export interface ApiError {
   error: string;
@@ -92,23 +93,23 @@ export const apiClient = {
   // Channels
   channels: {
     getAll: (): Promise<ApiChannel[]> => 
-      fetch(`${API_BASE_URL}/channels`).then(r => handleResponse<ApiChannel[]>(r)),
+      fetch(`${API_FULL_URL}/channels`).then(r => handleResponse<ApiChannel[]>(r)),
     getByKey: (key: string): Promise<ApiChannel> => 
-      fetch(`${API_BASE_URL}/channels/${key}`).then(r => handleResponse<ApiChannel>(r)),
+      fetch(`${API_FULL_URL}/channels/${key}`).then(r => handleResponse<ApiChannel>(r)),
     create: (data: unknown): Promise<ApiChannel> =>
-      fetch(`${API_BASE_URL}/channels`, {
+      fetch(`${API_FULL_URL}/channels`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiChannel>(r)),
     update: (key: string, data: unknown): Promise<ApiChannel> =>
-      fetch(`${API_BASE_URL}/channels/${key}`, {
+      fetch(`${API_FULL_URL}/channels/${key}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiChannel>(r)),
     delete: (key: string): Promise<void> =>
-      fetch(`${API_BASE_URL}/channels/${key}`, {
+      fetch(`${API_FULL_URL}/channels/${key}`, {
         method: 'DELETE',
       }).then(() => undefined),
   },
@@ -127,24 +128,24 @@ export const apiClient = {
         });
       }
       const query = searchParams.toString();
-      return fetch(`${API_BASE_URL}/content-items${query ? `?${query}` : ''}`).then(r => handleResponse<ApiContentItem[]>(r));
+      return fetch(`${API_FULL_URL}/content-items${query ? `?${query}` : ''}`).then(r => handleResponse<ApiContentItem[]>(r));
     },
     getById: (id: string): Promise<ApiContentItem> => 
-      fetch(`${API_BASE_URL}/content-items/${id}`).then(r => handleResponse<ApiContentItem>(r)),
+      fetch(`${API_FULL_URL}/content-items/${id}`).then(r => handleResponse<ApiContentItem>(r)),
     create: (data: unknown): Promise<ApiContentItem> =>
-      fetch(`${API_BASE_URL}/content-items`, {
+      fetch(`${API_FULL_URL}/content-items`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiContentItem>(r)),
     update: (id: string, data: unknown): Promise<ApiContentItem> =>
-      fetch(`${API_BASE_URL}/content-items/${id}`, {
+      fetch(`${API_FULL_URL}/content-items/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiContentItem>(r)),
     delete: (id: string): Promise<void> =>
-      fetch(`${API_BASE_URL}/content-items/${id}`, {
+      fetch(`${API_FULL_URL}/content-items/${id}`, {
         method: 'DELETE',
       }).then(() => undefined),
   },
@@ -152,21 +153,21 @@ export const apiClient = {
   // Variants
   variants: {
     getByContentItem: (contentItemId: string): Promise<ApiChannelVariant[]> =>
-      fetch(`${API_BASE_URL}/content-items/${contentItemId}/variants`).then(r => handleResponse<ApiChannelVariant[]>(r)),
+      fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants`).then(r => handleResponse<ApiChannelVariant[]>(r)),
     upsert: (contentItemId: string, channelKey: string, data: unknown): Promise<ApiChannelVariant> =>
-      fetch(`${API_BASE_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
+      fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiChannelVariant>(r)),
     create: (contentItemId: string, data: unknown): Promise<ApiChannelVariant> =>
-      fetch(`${API_BASE_URL}/content-items/${contentItemId}/variants`, {
+      fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiChannelVariant>(r)),
     delete: (contentItemId: string, channelKey: string): Promise<void> =>
-      fetch(`${API_BASE_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
+      fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
         method: 'DELETE',
       }).then(() => undefined),
   },
@@ -185,34 +186,34 @@ export const apiClient = {
         });
       }
       const query = searchParams.toString();
-      return fetch(`${API_BASE_URL}/publish-tasks${query ? `?${query}` : ''}`).then(r => handleResponse<ApiPublishTask[]>(r));
+      return fetch(`${API_FULL_URL}/publish-tasks${query ? `?${query}` : ''}`).then(r => handleResponse<ApiPublishTask[]>(r));
     },
     create: (data: unknown): Promise<ApiPublishTask> =>
-      fetch(`${API_BASE_URL}/publish-tasks`, {
+      fetch(`${API_FULL_URL}/publish-tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiPublishTask>(r)),
     bulkCreate: (contentItemId: string): Promise<ApiBulkCreateResponse> =>
-      fetch(`${API_BASE_URL}/publish-tasks/bulk-create`, {
+      fetch(`${API_FULL_URL}/publish-tasks/bulk-create`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ content_item_id: contentItemId }),
       }).then(r => handleResponse<ApiBulkCreateResponse>(r)),
     update: (id: string, data: unknown): Promise<ApiPublishTask> =>
-      fetch(`${API_BASE_URL}/publish-tasks/${id}`, {
+      fetch(`${API_FULL_URL}/publish-tasks/${id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiPublishTask>(r)),
     logPublish: (id: string, data: unknown): Promise<ApiLogPublishResponse> =>
-      fetch(`${API_BASE_URL}/publish-tasks/${id}/log-publish`, {
+      fetch(`${API_FULL_URL}/publish-tasks/${id}/log-publish`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiLogPublishResponse>(r)),
     delete: (id: string): Promise<void> =>
-      fetch(`${API_BASE_URL}/publish-tasks/${id}`, {
+      fetch(`${API_FULL_URL}/publish-tasks/${id}`, {
         method: 'DELETE',
       }).then(() => undefined),
   },
@@ -227,24 +228,24 @@ export const apiClient = {
         });
       }
       const query = searchParams.toString();
-      return fetch(`${API_BASE_URL}/publish-logs${query ? `?${query}` : ''}`).then(r => handleResponse<ApiPublishLog[]>(r));
+      return fetch(`${API_FULL_URL}/publish-logs${query ? `?${query}` : ''}`).then(r => handleResponse<ApiPublishLog[]>(r));
     },
     getById: (id: string): Promise<ApiPublishLog> => 
-      fetch(`${API_BASE_URL}/publish-logs/${id}`).then(r => handleResponse<ApiPublishLog>(r)),
+      fetch(`${API_FULL_URL}/publish-logs/${id}`).then(r => handleResponse<ApiPublishLog>(r)),
     create: (data: unknown): Promise<ApiPublishLog> =>
-      fetch(`${API_BASE_URL}/publish-logs`, {
+      fetch(`${API_FULL_URL}/publish-logs`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiPublishLog>(r)),
     update: (id: string, data: unknown): Promise<ApiPublishLog> =>
-      fetch(`${API_BASE_URL}/publish-logs/${id}`, {
+      fetch(`${API_FULL_URL}/publish-logs/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiPublishLog>(r)),
     delete: (id: string): Promise<void> =>
-      fetch(`${API_BASE_URL}/publish-logs/${id}`, {
+      fetch(`${API_FULL_URL}/publish-logs/${id}`, {
         method: 'DELETE',
       }).then(() => undefined),
   },
@@ -252,13 +253,13 @@ export const apiClient = {
   // Media Assets
   mediaAssets: {
     presign: (data: unknown) =>
-      fetch(`${API_BASE_URL}/media-assets/presign`, {
+      fetch(`${API_FULL_URL}/media-assets/presign`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<unknown>(r)),
     complete: (data: unknown) =>
-      fetch(`${API_BASE_URL}/media-assets/complete`, {
+      fetch(`${API_FULL_URL}/media-assets/complete`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
@@ -271,10 +272,10 @@ export const apiClient = {
         });
       }
       const query = searchParams.toString();
-      return fetch(`${API_BASE_URL}/media-assets${query ? `?${query}` : ''}`).then(r => handleResponse<unknown>(r));
+      return fetch(`${API_FULL_URL}/media-assets${query ? `?${query}` : ''}`).then(r => handleResponse<unknown>(r));
     },
     delete: (id: string): Promise<void> =>
-      fetch(`${API_BASE_URL}/media-assets/${id}`, {
+      fetch(`${API_FULL_URL}/media-assets/${id}`, {
         method: 'DELETE',
       }).then(() => undefined),
   },
