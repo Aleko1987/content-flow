@@ -152,8 +152,15 @@ export const apiClient = {
 
   // Variants
   variants: {
-    getByContentItem: (contentItemId: string): Promise<ApiChannelVariant[]> =>
-      fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants`).then(r => handleResponse<ApiChannelVariant[]>(r)),
+    getByContentItem: async (contentItemId: string): Promise<ApiChannelVariant[]> => {
+      const response = await fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants`);
+      // Treat 404 as "no variants" - return empty array
+      if (response.status === 404) {
+        return [];
+      }
+      // For all other errors, use existing error handling
+      return handleResponse<ApiChannelVariant[]>(response);
+    },
     upsert: (contentItemId: string, channelKey: string, data: unknown): Promise<ApiChannelVariant> =>
       fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
         method: 'PUT',
