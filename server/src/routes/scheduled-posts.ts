@@ -7,6 +7,9 @@ import { logger } from '../utils/logger.js';
 
 const router = Router();
 
+// Type alias for scheduled post from database
+type ScheduledPost = typeof scheduledPosts.$inferSelect;
+
 // Validation schemas
 const platformSchema = z.enum(['linkedin', 'x', 'instagram', 'facebook', 'tiktok', 'youtube-shorts']);
 const statusSchema = z.enum(['planned', 'queued', 'published', 'failed']);
@@ -52,7 +55,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { from, to } = req.query;
     
-    let posts;
+    let posts: ScheduledPost[] = [];
     
     if (from && to) {
       // Fetch posts in date range
