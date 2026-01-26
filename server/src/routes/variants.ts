@@ -16,6 +16,12 @@ const generateId = (): string => {
   });
 };
 
+// GET /api/content-ops/variants
+router.get('/', asyncHandler(async (req: Request, res: Response) => {
+  const allVariants = await db.select().from(channelVariants);
+  res.json(allVariants);
+}));
+
 // GET /api/content-ops/content-items/:id/variants
 router.get('/:id/variants', asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;

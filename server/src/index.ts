@@ -38,14 +38,14 @@ app.get('/health', (req: Request, res: Response) => {
 // API routes
 app.use('/api/content-ops/channels', channelsRouter);
 app.use('/api/content-ops/content-items', contentItemsRouter);
-app.use('/api/content-ops/content-items', variantsRouter);
+app.use('/api/content-ops/variants', variantsRouter);
 app.use('/api/content-ops/publish-tasks', publishTasksRouter);
 app.use('/api/content-ops/publish-logs', publishLogsRouter);
 app.use('/api/content-ops/media-assets', mediaAssetsRouter);
 app.use('/api/content-ops', seedRouter);
 
 // Scheduled Posts API (Calendar feature)
-app.use('/api/scheduled-posts', scheduledPostsRouter);
+app.use('/api/content-ops/scheduled-posts', scheduledPostsRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);

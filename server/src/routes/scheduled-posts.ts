@@ -47,33 +47,37 @@ const generateId = (): string => {
   });
 };
 
-// GET /api/scheduled-posts?from=YYYY-MM-DD&to=YYYY-MM-DD
+// GET /api/content-ops/scheduled-posts?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { from, to } = req.query;
     
-    if (!from || !to) {
-      return res.status(400).json({ error: 'Missing required query params: from, to' });
-    }
+    let posts;
+    
+    if (from && to) {
+      // Fetch posts in date range
+      const fromDate = new Date(`${from}T00:00:00.000Z`);
+      const toDate = new Date(`${to}T23:59:59.999Z`);
 
-    const fromDate = new Date(`${from}T00:00:00.000Z`);
-    const toDate = new Date(`${to}T23:59:59.999Z`);
+      if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+        return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
+      }
 
-    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
-      return res.status(400).json({ error: 'Invalid date format. Use YYYY-MM-DD' });
-    }
-
-    // Fetch posts in date range
-    const posts = await db
-      .select()
-      .from(scheduledPosts)
-      .where(
-        and(
-          gte(scheduledPosts.scheduledAt, fromDate),
-          lte(scheduledPosts.scheduledAt, toDate)
+      posts = await db
+        .select()
+        .from(scheduledPosts)
+        .where(
+          and(
+            gte(scheduledPosts.scheduledAt, fromDate),
+            lte(scheduledPosts.scheduledAt, toDate)
+          )
         )
-      )
-      .orderBy(scheduledPosts.scheduledAt);
+        .orderBy(scheduledPosts.scheduledAt);
+    } else {
+      // If no date range provided, return all posts (or empty array if too many)
+      // For now, return empty array to avoid loading too much data
+      posts = [];
+    }
 
     // Fetch media for all posts
     const postIds = posts.map(p => p.id);
@@ -121,7 +125,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// POST /api/scheduled-posts
+// POST /api/content-ops/scheduled-posts
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const parsed = createScheduledPostSchema.safeParse(req.body);
@@ -194,7 +198,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// PUT /api/scheduled-posts/:id
+// PUT /api/content-ops/scheduled-posts/:id
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
@@ -281,7 +285,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// DELETE /api/scheduled-posts/:id
+// DELETE /api/content-ops/scheduled-posts/:id
 router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { id } = req.params;
