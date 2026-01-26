@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express, { type Request, type Response, type NextFunction } from 'express';
 import * as dotenv from 'dotenv';
-import { corsMiddleware } from './middleware/cors.js';
+import cors from "cors";
 import { errorHandler } from './middleware/error-handler.js';
 import { logger } from './utils/logger.js';
 import channelsRouter from './routes/channels.js';
@@ -19,8 +19,33 @@ dotenv.config();
 const app = express();
 const PORT = Number(process.env.PORT ?? 10000);
 
+const allowedOrigins = (process.env.ALLOWED_ORIGINS ?? "")
+  .split(",")
+  .map(o => o.trim())
+  .filter(Boolean);
+
+app.use(
+  cors({
+    origin: (origin, callback) => {
+      // allow server-to-server and curl (no Origin header)
+      if (!origin) return callback(null, true);
+
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // IMPORTANT: do not error — silently disallow
+      return callback(null, false);
+    },
+    methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
+
+// ensure preflight never hits auth or routes
+app.options("*", cors());
+
 // Middleware
-app.use(corsMiddleware);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
