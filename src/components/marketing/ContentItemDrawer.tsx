@@ -20,8 +20,9 @@ import {
 } from '@/components/ui/select';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Separator } from '@/components/ui/separator';
-import { Plus, Wand2, Trash2 } from 'lucide-react';
+import { Plus, Wand2, Trash2, Upload, X } from 'lucide-react';
 import { MediaPicker } from './MediaPicker';
+import { apiClient } from '@/lib/api-client';
 import type { ContentStatus, ContentPillar, ContentFormat, Priority, ChannelKey, ChannelVariant } from '@/types/content-ops';
 
 interface ContentItemDrawerProps {
@@ -52,6 +53,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
     getTasksForContent,
     createTask,
     createTasksForAllChannels,
+    refreshContentItems,
   } = useContentOps();
   
   const item = itemId ? getContentItem(itemId) : null;
@@ -67,6 +69,8 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
     priority: 2 as Priority,
     notes: '',
   });
+  const [uploading, setUploading] = useState(false);
+  const [attachedMedia, setAttachedMedia] = useState<Array<{ id: string; url: string; filename: string }>>([]);
   
   useEffect(() => {
     if (item) {
@@ -79,6 +83,13 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
         priority: item.priority,
         notes: item.notes || '',
       });
+      // Load attached media if mediaIds exist
+      if (item.mediaIds && item.mediaIds.length > 0) {
+        // For now, we'll just store the IDs. In a full implementation, you'd fetch media details
+        setAttachedMedia(item.mediaIds.map(id => ({ id, url: '', filename: '' })));
+      } else {
+        setAttachedMedia([]);
+      }
     }
   }, [item]);
   
@@ -134,6 +145,56 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
       await createTasksForAllChannels(itemId);
     } catch (error) {
       // Error handled by context toast
+    }
+  };
+
+  const handleFileSelect = async (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !itemId) return;
+
+    setUploading(true);
+    try {
+      // Step 1: Get presigned URL
+      const { key, uploadUrl, publicUrl } = await apiClient.media.presign(file.name, file.type);
+
+      // Step 2: Upload directly to R2
+      const uploadResponse = await fetch(uploadUrl, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': file.type,
+        },
+        body: file,
+      });
+
+      if (!uploadResponse.ok) {
+        throw new Error(`Upload failed: ${uploadResponse.statusText}`);
+      }
+
+      // Step 3: Create media record
+      const mediaRecord = await apiClient.media.create({
+        key,
+        url: publicUrl || uploadUrl,
+        filename: file.name,
+        contentType: file.type,
+        size: file.size,
+      });
+
+      // Step 4: Update content item with new media ID
+      const currentMediaIds = item?.mediaIds || [];
+      await updateContentItem(itemId, {
+        mediaIds: [...currentMediaIds, mediaRecord.id],
+      });
+
+      // Step 5: Refresh to get updated item
+      await refreshContentItems();
+
+      // Reset file input
+      event.target.value = '';
+    } catch (error) {
+      console.error('Upload failed:', error);
+      alert(error instanceof Error ? error.message : 'Upload failed');
+    } finally {
+      setUploading(false);
     }
   };
   
@@ -279,6 +340,54 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                 className="bg-secondary/50"
               />
             </div>
+          </div>
+
+          <Separator />
+
+          {/* Media Upload */}
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <h3 className="font-semibold text-foreground">Media</h3>
+              <div className="relative">
+                <input
+                  type="file"
+                  id="media-upload"
+                  className="hidden"
+                  onChange={handleFileSelect}
+                  disabled={uploading || !itemId}
+                  accept="image/*,video/*"
+                />
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => document.getElementById('media-upload')?.click()}
+                  disabled={uploading || !itemId}
+                >
+                  <Upload className="h-4 w-4 mr-2" />
+                  {uploading ? 'Uploading...' : 'Upload'}
+                </Button>
+              </div>
+            </div>
+
+            {/* Attached Media List */}
+            {item?.mediaIds && item.mediaIds.length > 0 ? (
+              <div className="grid grid-cols-3 gap-2">
+                {item.mediaIds.map((mediaId) => (
+                  <div
+                    key={mediaId}
+                    className="relative aspect-square bg-secondary/20 rounded-lg overflow-hidden border border-border"
+                  >
+                    <div className="w-full h-full flex items-center justify-center text-xs text-muted-foreground">
+                      Media {mediaId.substring(0, 8)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground text-center py-4">
+                No media attached. Click Upload to add files.
+              </p>
+            )}
           </div>
           
           <Separator />

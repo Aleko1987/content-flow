@@ -42,6 +42,7 @@ function toCamelCaseContentItem(obj: any): ContentItem {
     priority: obj.priority as Priority,
     owner: obj.owner,
     notes: obj.notes,
+    mediaIds: Array.isArray(obj.media_ids) ? obj.media_ids : (obj.mediaIds || []),
     createdAt: new Date(obj.created_at),
     updatedAt: new Date(obj.updated_at),
   };

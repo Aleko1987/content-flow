@@ -145,7 +145,7 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
     const item = items[0];
 
     // Build safe updates object containing only allowed keys
-    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes'];
+    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes', 'mediaIds'];
     const safeUpdates: Record<string, unknown> = {};
 
     for (const field of allowedFields) {
@@ -159,6 +159,16 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
       const validStatuses = ['draft', 'ready', 'scheduled', 'posted'];
       if (!validStatuses.includes(safeUpdates.status as string)) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      }
+    }
+
+    // Validate mediaIds if provided
+    if (safeUpdates.mediaIds !== undefined) {
+      if (!Array.isArray(safeUpdates.mediaIds)) {
+        return res.status(400).json({ error: 'mediaIds must be an array' });
+      }
+      if (!safeUpdates.mediaIds.every((id: unknown) => typeof id === 'string')) {
+        return res.status(400).json({ error: 'mediaIds must be an array of strings' });
       }
     }
 

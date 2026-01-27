@@ -10,6 +10,7 @@ import variantsRouter from './routes/variants.js';
 import publishTasksRouter from './routes/publish-tasks.js';
 import publishLogsRouter from './routes/publish-logs.js';
 import mediaAssetsRouter from './routes/media-assets.js';
+import mediaRouter from './routes/media.js';
 import seedRouter from './routes/seed.js';
 import scheduledPostsRouter from './routes/scheduled-posts.js';
 
@@ -67,6 +68,7 @@ app.use('/api/content-ops/variants', variantsRouter);
 app.use('/api/content-ops/publish-tasks', publishTasksRouter);
 app.use('/api/content-ops/publish-logs', publishLogsRouter);
 app.use('/api/content-ops/media-assets', mediaAssetsRouter);
+app.use('/api/content-ops/media', mediaRouter);
 app.use('/api/content-ops', seedRouter);
 
 // Scheduled Posts API (Calendar feature)

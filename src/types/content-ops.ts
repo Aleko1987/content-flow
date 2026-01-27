@@ -26,6 +26,7 @@ export interface ContentItem {
   priority: Priority;
   owner: string | null;
   notes: string | null;
+  mediaIds: string[];
   createdAt: Date;
   updatedAt: Date;
 }

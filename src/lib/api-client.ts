@@ -38,6 +38,7 @@ export interface ApiContentItem {
   priority: number;
   owner: string | null;
   notes: string | null;
+  media_ids?: string[];
   created_at: string;
   updated_at: string;
 }
@@ -299,5 +300,21 @@ export const apiClient = {
       fetch(`${API_FULL_URL}/media-assets/${id}`, {
         method: 'DELETE',
       }).then(() => undefined),
+  },
+
+  // Media (R2 uploads)
+  media: {
+    presign: (filename: string, contentType: string): Promise<{ key: string; uploadUrl: string; publicUrl: string | null }> =>
+      fetch(`${API_FULL_URL}/media/presign`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ filename, contentType }),
+      }).then(r => handleResponse<{ key: string; uploadUrl: string; publicUrl: string | null }>(r)),
+    create: (metadata: { key: string; url: string; filename: string; contentType: string; size: number }): Promise<{ id: string; key: string; url: string; filename: string; contentType: string; size: number | null; createdAt: string }> =>
+      fetch(`${API_FULL_URL}/media`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(metadata),
+      }).then(r => handleResponse<{ id: string; key: string; url: string; filename: string; contentType: string; size: number | null; createdAt: string }>(r)),
   },
 };
