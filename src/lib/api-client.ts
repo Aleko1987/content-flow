@@ -1,6 +1,7 @@
 // API Client for Content Ops Backend
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com';
 const API_FULL_URL = `${API_BASE_URL}/api/content-ops`;
+const ENABLE_VARIANTS = import.meta.env.VITE_ENABLE_VARIANTS === "true";
 
 export interface ApiError {
   error: string;
@@ -153,6 +154,9 @@ export const apiClient = {
   // Variants
   variants: {
     getByContentItem: async (contentItemId: string): Promise<ApiChannelVariant[]> => {
+      if (!ENABLE_VARIANTS) {
+        return [];
+      }
       const response = await fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants`);
       // Treat 404 as "no variants" - return empty array
       if (response.status === 404) {
@@ -161,12 +165,16 @@ export const apiClient = {
       // For all other errors, use existing error handling
       return handleResponse<ApiChannelVariant[]>(response);
     },
-    upsert: (contentItemId: string, channelKey: string, data: unknown): Promise<ApiChannelVariant> =>
-      fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
+    upsert: (contentItemId: string, channelKey: string, data: unknown): Promise<ApiChannelVariant> => {
+      if (!ENABLE_VARIANTS) {
+        return Promise.reject(new Error("Variants disabled"));
+      }
+      return fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants/${channelKey}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
-      }).then(r => handleResponse<ApiChannelVariant>(r)),
+      }).then(r => handleResponse<ApiChannelVariant>(r));
+    },
     create: (contentItemId: string, data: unknown): Promise<ApiChannelVariant> =>
       fetch(`${API_FULL_URL}/content-items/${contentItemId}/variants`, {
         method: 'POST',
