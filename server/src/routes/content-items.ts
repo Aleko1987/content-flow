@@ -129,6 +129,14 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params;
   const updates = req.body;
 
+  // Validate status if provided
+  if (updates.status !== undefined) {
+    const validStatuses = ['draft', 'ready', 'scheduled', 'posted'];
+    if (!validStatuses.includes(updates.status)) {
+      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+    }
+  }
+
   // Remove id from updates if present
   delete updates.id;
   delete updates.createdAt;
