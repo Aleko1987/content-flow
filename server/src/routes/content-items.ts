@@ -126,48 +126,55 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
 
 // PATCH /api/content-ops/content-items/:id
 router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params;
+  const body = req.body;
+
   try {
-    const { id } = req.params;
-    
-    // Ensure req.body is an object
-    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+    // Ensure req.body is a plain object
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
       return res.status(400).json({ error: 'Request body must be an object' });
     }
 
-    // Allowed fields for update
-    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes'];
-    const updates: Record<string, unknown> = {};
+    // Find item by id (same approach as GET)
+    const items = await db.select().from(contentItems).where(eq(contentItems.id, id)).limit(1);
+    
+    if (items.length === 0) {
+      return res.status(404).json({ error: 'Content item not found' });
+    }
 
-    // Only include allowed fields from req.body
+    const item = items[0];
+
+    // Build safe updates object containing only allowed keys
+    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes'];
+    const safeUpdates: Record<string, unknown> = {};
+
     for (const field of allowedFields) {
-      if (field in req.body) {
-        updates[field] = req.body[field];
+      if (field in body) {
+        safeUpdates[field] = body[field];
       }
     }
 
     // Validate status if provided
-    if (updates.status !== undefined) {
+    if (safeUpdates.status !== undefined) {
       const validStatuses = ['draft', 'ready', 'scheduled', 'posted'];
-      if (!validStatuses.includes(updates.status as string)) {
+      if (!validStatuses.includes(safeUpdates.status as string)) {
         return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
       }
     }
 
-    // Set updatedAt
-    updates.updatedAt = new Date().toISOString();
+    // Always set updatedAt to new ISO string
+    const now = new Date();
+    
+    // Apply updates to item with Object.assign
+    Object.assign(item, safeUpdates, { updatedAt: now.toISOString() });
 
-    // If no updates to apply, return the existing item
-    if (Object.keys(updates).length === 1 && 'updatedAt' in updates) {
-      const existing = await db.select().from(contentItems).where(eq(contentItems.id, id)).limit(1);
-      if (existing.length === 0) {
-        return res.status(404).json({ error: 'Content item not found' });
-      }
-      return res.json(existing[0]);
-    }
-
+    // Save back to database (use Date object for database)
     const updated = await db
       .update(contentItems)
-      .set(updates)
+      .set({
+        ...safeUpdates,
+        updatedAt: now,
+      })
       .where(eq(contentItems.id, id))
       .returning();
 
@@ -177,8 +184,8 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
 
     res.json(updated[0]);
   } catch (error) {
-    console.error('PATCH /api/content-ops/content-items/:id error:', error);
-    throw error;
+    console.error('PATCH /api/content-ops/content-items/:id error:', error, 'id:', id, 'body:', body);
+    return res.status(500).json({ error: 'Internal server error' });
   }
 }));
 
