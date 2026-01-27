@@ -126,34 +126,60 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
 
 // PATCH /api/content-ops/content-items/:id
 router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
-  const { id } = req.params;
-  const updates = req.body;
-
-  // Validate status if provided
-  if (updates.status !== undefined) {
-    const validStatuses = ['draft', 'ready', 'scheduled', 'posted'];
-    if (!validStatuses.includes(updates.status)) {
-      return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+  try {
+    const { id } = req.params;
+    
+    // Ensure req.body is an object
+    if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+      return res.status(400).json({ error: 'Request body must be an object' });
     }
+
+    // Allowed fields for update
+    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes'];
+    const updates: Record<string, unknown> = {};
+
+    // Only include allowed fields from req.body
+    for (const field of allowedFields) {
+      if (field in req.body) {
+        updates[field] = req.body[field];
+      }
+    }
+
+    // Validate status if provided
+    if (updates.status !== undefined) {
+      const validStatuses = ['draft', 'ready', 'scheduled', 'posted'];
+      if (!validStatuses.includes(updates.status as string)) {
+        return res.status(400).json({ error: `Invalid status. Must be one of: ${validStatuses.join(', ')}` });
+      }
+    }
+
+    // Set updatedAt
+    updates.updatedAt = new Date().toISOString();
+
+    // If no updates to apply, return the existing item
+    if (Object.keys(updates).length === 1 && 'updatedAt' in updates) {
+      const existing = await db.select().from(contentItems).where(eq(contentItems.id, id)).limit(1);
+      if (existing.length === 0) {
+        return res.status(404).json({ error: 'Content item not found' });
+      }
+      return res.json(existing[0]);
+    }
+
+    const updated = await db
+      .update(contentItems)
+      .set(updates)
+      .where(eq(contentItems.id, id))
+      .returning();
+
+    if (updated.length === 0) {
+      return res.status(404).json({ error: 'Content item not found' });
+    }
+
+    res.json(updated[0]);
+  } catch (error) {
+    console.error('PATCH /api/content-ops/content-items/:id error:', error);
+    throw error;
   }
-
-  // Remove id from updates if present
-  delete updates.id;
-  delete updates.createdAt;
-
-  updates.updatedAt = new Date();
-
-  const updated = await db
-    .update(contentItems)
-    .set(updates)
-    .where(eq(contentItems.id, id))
-    .returning();
-
-  if (updated.length === 0) {
-    return res.status(404).json({ error: 'Content item not found' });
-  }
-
-  res.json(updated[0]);
 }));
 
 // DELETE /api/content-ops/content-items/:id
