@@ -1,5 +1,6 @@
 import React, { useState, useRef, useMemo } from 'react';
 import { useContentOps } from '@/contexts/ContentOpsContext';
+import { apiClient } from '@/lib/api-client';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -55,7 +56,7 @@ export const ContentPlanTab: React.FC<ContentPlanTabProps> = ({
   onCloseNewModal,
   searchInputRef,
 }) => {
-  const { getContentItems, deleteContentItem } = useContentOps();
+  const { getContentItems, deleteContentItem, refreshContentItems } = useContentOps();
   const [viewMode, setViewMode] = useState<'table' | 'kanban'>('table');
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -106,6 +107,16 @@ export const ContentPlanTab: React.FC<ContentPlanTabProps> = ({
       await deleteContentItem(id);
     } catch (error) {
       // Error handled by context toast
+    }
+  };
+
+  const handleStatusChange = async (id: string, newStatus: string) => {
+    try {
+      await apiClient.contentItems.updateStatus(id, newStatus);
+      await refreshContentItems();
+    } catch (error) {
+      // Error will be shown by API client error handling
+      console.error('Failed to update status:', error);
     }
   };
   
@@ -237,10 +248,23 @@ export const ContentPlanTab: React.FC<ContentPlanTabProps> = ({
                       )}
                     </div>
                   </TableCell>
-                  <TableCell>
-                    <Badge variant="outline" className={statusColors[item.status]}>
-                      {item.status}
-                    </Badge>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Select
+                      value={item.status}
+                      onValueChange={(value) => handleStatusChange(item.id, value)}
+                    >
+                      <SelectTrigger 
+                        className={`w-32 h-7 ${statusColors[item.status]}`}
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="draft">Draft</SelectItem>
+                        <SelectItem value="ready">Ready</SelectItem>
+                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                        <SelectItem value="posted">Posted</SelectItem>
+                      </SelectContent>
+                    </Select>
                   </TableCell>
                   <TableCell>
                     {item.pillar && (

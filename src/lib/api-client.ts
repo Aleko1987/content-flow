@@ -145,6 +145,12 @@ export const apiClient = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       }).then(r => handleResponse<ApiContentItem>(r)),
+    updateStatus: (id: string, status: string): Promise<ApiContentItem> =>
+      fetch(`${API_FULL_URL}/content-items/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status }),
+      }).then(r => handleResponse<ApiContentItem>(r)),
     delete: (id: string): Promise<void> =>
       fetch(`${API_FULL_URL}/content-items/${id}`, {
         method: 'DELETE',
