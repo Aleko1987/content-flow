@@ -17,8 +17,20 @@ const mediaToApi = (media: MediaItem[]) =>
 
 // Helper to convert API response to frontend format
 const apiToScheduledPost = (data: any): ScheduledPost => {
-  // Ensure mediaIds is always an array (API now returns it, but handle legacy responses)
-  const mediaIds = Array.isArray(data.mediaIds) ? data.mediaIds : [];
+  const mediaArray = Array.isArray(data.media) ? data.media.map((m: any) => ({
+    id: m.id,
+    type: m.type,
+    fileName: m.fileName,
+    mimeType: m.mimeType,
+    size: m.size,
+    storageUrl: m.storageUrl || '',
+    localObjectUrl: undefined, // API doesn't store local URLs
+  })) : [];
+  
+  // Derive mediaIds from media array if not present in response (defensive)
+  const mediaIds = Array.isArray(data.mediaIds) && data.mediaIds.length > 0
+    ? data.mediaIds
+    : mediaArray.map(m => m.id);
   
   return {
     id: data.id,
@@ -29,15 +41,8 @@ const apiToScheduledPost = (data: any): ScheduledPost => {
     scheduledAt: data.scheduledAt,
     platforms: Array.isArray(data.platforms) ? (data.platforms as Platform[]) : [],
     status: data.status,
-    media: Array.isArray(data.media) ? data.media.map((m: any) => ({
-      id: m.id,
-      type: m.type,
-      fileName: m.fileName,
-      mimeType: m.mimeType,
-      size: m.size,
-      storageUrl: m.storageUrl || '',
-      localObjectUrl: undefined, // API doesn't store local URLs
-    })) : [],
+    media: mediaArray,
+    mediaIds: mediaIds,
     contentItemId: data.contentItemId,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,

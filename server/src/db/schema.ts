@@ -108,7 +108,6 @@ export const scheduledPosts = pgTable('scheduled_posts', {
   scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
   platforms: jsonb('platforms').$type<string[]>().notNull().default([]),
   status: varchar('status', { length: 50 }).notNull().default('planned'),
-  mediaIds: jsonb('media_ids').$type<string[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

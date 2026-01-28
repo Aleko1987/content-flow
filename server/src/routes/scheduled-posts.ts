@@ -50,19 +50,8 @@ const generateId = (): string => {
   });
 };
 
-// Helper to ensure mediaIds is always an array
-const normalizeMediaIds = (mediaIds: unknown): string[] => {
-  if (Array.isArray(mediaIds)) {
-    return mediaIds.filter((id): id is string => typeof id === 'string');
-  }
-  return [];
-};
-
-// Helper to transform scheduled post response with normalized mediaIds
+// Helper to transform scheduled post response with derived mediaIds
 const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPostMedia.$inferSelect[]) => {
-  // Ensure mediaIds is always an array, even if missing from DB
-  const postMediaIds = normalizeMediaIds((post as any).mediaIds || []);
-  
   const mediaArray = media.map(m => ({
     id: m.id,
     type: m.type,
@@ -71,6 +60,9 @@ const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPost
     size: m.size,
     storageUrl: m.storageUrl || '',
   }));
+
+  // Derive mediaIds from media array (source of truth)
+  const mediaIds = mediaArray.map(m => m.id);
 
   return {
     id: post.id,
@@ -81,7 +73,7 @@ const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPost
     scheduledTime: post.scheduledAt.toISOString().split('T')[1].substring(0, 5),
     platforms: Array.isArray(post.platforms) ? post.platforms : [],
     status: post.status,
-    mediaIds: postMediaIds,
+    mediaIds: mediaIds,
     media: mediaArray,
     createdAt: post.createdAt.toISOString(),
     updatedAt: post.updatedAt.toISOString(),
@@ -129,12 +121,6 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       const allMedia = await db.select().from(scheduledPostMedia);
       mediaItems = allMedia.filter(m => postIds.includes(m.scheduledPostId));
     }
-    
-    // Ensure all posts have mediaIds as array (handle missing/empty mediaIds)
-    posts = posts.map(p => {
-      const normalizedIds = normalizeMediaIds((p as any).mediaIds || []);
-      return { ...p, mediaIds: normalizedIds } as ScheduledPost;
-    });
 
     // Group media by post
     const mediaByPost = mediaItems.reduce((acc, m) => {
@@ -175,11 +161,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const { title, caption, scheduledAt, platforms, status, media } = parsed.data;
     const postId = generateId();
     const now = new Date();
-
-    // Extract mediaIds from media array for storage
-    const mediaIds = media.map(m => m.id || generateId());
     
-    // Insert the post
+    // Insert the post (no mediaIds stored - derived from scheduled_post_media)
     await db.insert(scheduledPosts).values({
       id: postId,
       title: title ?? null,
@@ -187,7 +170,6 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       scheduledAt: new Date(scheduledAt),
       platforms,
       status,
-      mediaIds: mediaIds,
       createdAt: now,
       updatedAt: now,
     });
@@ -240,7 +222,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const { title, caption, scheduledAt, platforms, status, media } = parsed.data;
     const now = new Date();
 
-    // Build update object
+    // Build update object (no mediaIds - derived from scheduled_post_media)
     const updates: Partial<typeof scheduledPosts.$inferInsert> = {
       updatedAt: now,
     };
@@ -250,12 +232,6 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (scheduledAt !== undefined) updates.scheduledAt = new Date(scheduledAt);
     if (platforms !== undefined) updates.platforms = platforms;
     if (status !== undefined) updates.status = status;
-    
-    // Update mediaIds if media is provided
-    if (media !== undefined) {
-      const mediaIds = media.map(m => m.id || generateId());
-      updates.mediaIds = mediaIds;
-    }
 
     // Update the post
     await db.update(scheduledPosts).set(updates).where(eq(scheduledPosts.id, id));

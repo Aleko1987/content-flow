@@ -24,6 +24,7 @@ export interface ScheduledPost {
   platforms: Platform[];
   status: ScheduledPostStatus;
   media: MediaItem[];
+  mediaIds: string[]; // Derived from media[].id (source of truth: scheduled_post_media)
   contentItemId?: string; // Link to ContentItem if applicable
   createdAt: string;
   updatedAt: string;
