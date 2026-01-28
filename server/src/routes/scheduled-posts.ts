@@ -50,6 +50,44 @@ const generateId = (): string => {
   });
 };
 
+// Helper to ensure mediaIds is always an array
+const normalizeMediaIds = (mediaIds: unknown): string[] => {
+  if (Array.isArray(mediaIds)) {
+    return mediaIds.filter((id): id is string => typeof id === 'string');
+  }
+  return [];
+};
+
+// Helper to transform scheduled post response with normalized mediaIds
+const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPostMedia.$inferSelect[]) => {
+  // Ensure mediaIds is always an array, even if missing from DB
+  const postMediaIds = normalizeMediaIds((post as any).mediaIds || []);
+  
+  const mediaArray = media.map(m => ({
+    id: m.id,
+    type: m.type,
+    fileName: m.fileName,
+    mimeType: m.mimeType,
+    size: m.size,
+    storageUrl: m.storageUrl || '',
+  }));
+
+  return {
+    id: post.id,
+    title: post.title,
+    caption: post.caption,
+    scheduledAt: post.scheduledAt.toISOString(),
+    scheduledDate: post.scheduledAt.toISOString().split('T')[0],
+    scheduledTime: post.scheduledAt.toISOString().split('T')[1].substring(0, 5),
+    platforms: Array.isArray(post.platforms) ? post.platforms : [],
+    status: post.status,
+    mediaIds: postMediaIds,
+    media: mediaArray,
+    createdAt: post.createdAt.toISOString(),
+    updatedAt: post.updatedAt.toISOString(),
+  };
+};
+
 // GET /api/content-ops/scheduled-posts?from=YYYY-MM-DD&to=YYYY-MM-DD
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -91,6 +129,12 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       const allMedia = await db.select().from(scheduledPostMedia);
       mediaItems = allMedia.filter(m => postIds.includes(m.scheduledPostId));
     }
+    
+    // Ensure all posts have mediaIds as array (handle missing/empty mediaIds)
+    posts = posts.map(p => {
+      const normalizedIds = normalizeMediaIds((p as any).mediaIds || []);
+      return { ...p, mediaIds: normalizedIds } as ScheduledPost;
+    });
 
     // Group media by post
     const mediaByPost = mediaItems.reduce((acc, m) => {
@@ -107,19 +151,10 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
     }, {} as Record<string, any[]>);
 
     // Transform to camelCase response
-    const response = posts.map(post => ({
-      id: post.id,
-      title: post.title,
-      caption: post.caption,
-      scheduledAt: post.scheduledAt.toISOString(),
-      scheduledDate: post.scheduledAt.toISOString().split('T')[0],
-      scheduledTime: post.scheduledAt.toISOString().split('T')[1].substring(0, 5),
-      platforms: post.platforms,
-      status: post.status,
-      media: mediaByPost[post.id] || [],
-      createdAt: post.createdAt.toISOString(),
-      updatedAt: post.updatedAt.toISOString(),
-    }));
+    const response = posts.map(post => {
+      const postMedia = mediaByPost[post.id] || [];
+      return transformScheduledPost(post, postMedia);
+    });
 
     logger.info(`Fetched ${response.length} scheduled posts for range ${from} to ${to}`);
     res.json(response);
@@ -141,6 +176,9 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const postId = generateId();
     const now = new Date();
 
+    // Extract mediaIds from media array for storage
+    const mediaIds = media.map(m => m.id || generateId());
+    
     // Insert the post
     await db.insert(scheduledPosts).values({
       id: postId,
@@ -149,6 +187,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       scheduledAt: new Date(scheduledAt),
       platforms,
       status,
+      mediaIds: mediaIds,
       createdAt: now,
       updatedAt: now,
     });
@@ -173,26 +212,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     const [createdPost] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, postId));
     const createdMedia = await db.select().from(scheduledPostMedia).where(eq(scheduledPostMedia.scheduledPostId, postId));
 
-    const response = {
-      id: createdPost.id,
-      title: createdPost.title,
-      caption: createdPost.caption,
-      scheduledAt: createdPost.scheduledAt.toISOString(),
-      scheduledDate: createdPost.scheduledAt.toISOString().split('T')[0],
-      scheduledTime: createdPost.scheduledAt.toISOString().split('T')[1].substring(0, 5),
-      platforms: createdPost.platforms,
-      status: createdPost.status,
-      media: createdMedia.map(m => ({
-        id: m.id,
-        type: m.type,
-        fileName: m.fileName,
-        mimeType: m.mimeType,
-        size: m.size,
-        storageUrl: m.storageUrl,
-      })),
-      createdAt: createdPost.createdAt.toISOString(),
-      updatedAt: createdPost.updatedAt.toISOString(),
-    };
+    const response = transformScheduledPost(createdPost, createdMedia);
 
     logger.info(`Created scheduled post ${postId}`);
     res.status(201).json(response);
@@ -230,6 +250,12 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (scheduledAt !== undefined) updates.scheduledAt = new Date(scheduledAt);
     if (platforms !== undefined) updates.platforms = platforms;
     if (status !== undefined) updates.status = status;
+    
+    // Update mediaIds if media is provided
+    if (media !== undefined) {
+      const mediaIds = media.map(m => m.id || generateId());
+      updates.mediaIds = mediaIds;
+    }
 
     // Update the post
     await db.update(scheduledPosts).set(updates).where(eq(scheduledPosts.id, id));
@@ -260,28 +286,33 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const [updatedPost] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, id));
     const updatedMedia = await db.select().from(scheduledPostMedia).where(eq(scheduledPostMedia.scheduledPostId, id));
 
-    const response = {
-      id: updatedPost.id,
-      title: updatedPost.title,
-      caption: updatedPost.caption,
-      scheduledAt: updatedPost.scheduledAt.toISOString(),
-      scheduledDate: updatedPost.scheduledAt.toISOString().split('T')[0],
-      scheduledTime: updatedPost.scheduledAt.toISOString().split('T')[1].substring(0, 5),
-      platforms: updatedPost.platforms,
-      status: updatedPost.status,
-      media: updatedMedia.map(m => ({
-        id: m.id,
-        type: m.type,
-        fileName: m.fileName,
-        mimeType: m.mimeType,
-        size: m.size,
-        storageUrl: m.storageUrl,
-      })),
-      createdAt: updatedPost.createdAt.toISOString(),
-      updatedAt: updatedPost.updatedAt.toISOString(),
-    };
+    const response = transformScheduledPost(updatedPost, updatedMedia);
 
     logger.info(`Updated scheduled post ${id}`);
+    res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// GET /api/content-ops/scheduled-posts/:id
+router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+
+    // Fetch the post
+    const [post] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, id));
+    
+    if (!post) {
+      return res.status(404).json({ error: 'Scheduled post not found' });
+    }
+
+    // Fetch media for the post
+    const media = await db.select().from(scheduledPostMedia).where(eq(scheduledPostMedia.scheduledPostId, id));
+
+    const response = transformScheduledPost(post, media);
+
+    logger.info(`Fetched scheduled post ${id}`);
     res.json(response);
   } catch (error) {
     next(error);

@@ -16,28 +16,33 @@ const mediaToApi = (media: MediaItem[]) =>
   }));
 
 // Helper to convert API response to frontend format
-const apiToScheduledPost = (data: any): ScheduledPost => ({
-  id: data.id,
-  title: data.title,
-  caption: data.caption,
-  scheduledDate: data.scheduledDate,
-  scheduledTime: data.scheduledTime,
-  scheduledAt: data.scheduledAt,
-  platforms: data.platforms as Platform[],
-  status: data.status,
-  media: (data.media || []).map((m: any) => ({
-    id: m.id,
-    type: m.type,
-    fileName: m.fileName,
-    mimeType: m.mimeType,
-    size: m.size,
-    storageUrl: m.storageUrl,
-    localObjectUrl: undefined, // API doesn't store local URLs
-  })),
-  contentItemId: data.contentItemId,
-  createdAt: data.createdAt,
-  updatedAt: data.updatedAt,
-});
+const apiToScheduledPost = (data: any): ScheduledPost => {
+  // Ensure mediaIds is always an array (API now returns it, but handle legacy responses)
+  const mediaIds = Array.isArray(data.mediaIds) ? data.mediaIds : [];
+  
+  return {
+    id: data.id,
+    title: data.title,
+    caption: data.caption,
+    scheduledDate: data.scheduledDate,
+    scheduledTime: data.scheduledTime,
+    scheduledAt: data.scheduledAt,
+    platforms: Array.isArray(data.platforms) ? (data.platforms as Platform[]) : [],
+    status: data.status,
+    media: Array.isArray(data.media) ? data.media.map((m: any) => ({
+      id: m.id,
+      type: m.type,
+      fileName: m.fileName,
+      mimeType: m.mimeType,
+      size: m.size,
+      storageUrl: m.storageUrl || '',
+      localObjectUrl: undefined, // API doesn't store local URLs
+    })) : [],
+    contentItemId: data.contentItemId,
+    createdAt: data.createdAt,
+    updatedAt: data.updatedAt,
+  };
+};
 
 // Combine date and time to ISO string
 const combineDateTime = (date: string, time: string): string => {
@@ -66,10 +71,20 @@ const getAll = async (): Promise<ScheduledPost[]> => {
   return getByDateRange(startDate, endDate);
 };
 
-// Get post by ID (fetches all and filters - simple approach)
+// Get post by ID
 const getById = async (id: string): Promise<ScheduledPost | null> => {
-  const posts = await getAll();
-  return posts.find(p => p.id === id) || null;
+  const response = await fetch(`${API_FULL_URL}/scheduled-posts/${id}`);
+  
+  if (response.status === 404) {
+    return null;
+  }
+  
+  if (!response.ok) {
+    throw new Error(`Failed to fetch scheduled post: ${response.statusText}`);
+  }
+  
+  const data = await response.json();
+  return apiToScheduledPost(data);
 };
 
 // Get posts for a specific date

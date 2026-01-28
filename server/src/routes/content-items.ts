@@ -16,6 +16,32 @@ const generateId = (): string => {
   });
 };
 
+// Helper to ensure mediaIds is always an array
+const normalizeMediaIds = (mediaIds: unknown): string[] => {
+  if (Array.isArray(mediaIds)) {
+    return mediaIds.filter((id): id is string => typeof id === 'string');
+  }
+  return [];
+};
+
+// Helper to normalize content item response
+const normalizeContentItem = (item: any) => {
+  return {
+    id: item.id,
+    title: item.title,
+    hook: item.hook,
+    pillar: item.pillar,
+    format: item.format,
+    status: item.status,
+    priority: item.priority,
+    owner: item.owner,
+    notes: item.notes,
+    mediaIds: normalizeMediaIds(item.mediaIds),
+    createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
+    updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
+  };
+};
+
 // GET /api/content-ops/content-items
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const {
@@ -73,7 +99,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   }
 
   const items = await query;
-  res.json(items);
+  res.json(items.map(normalizeContentItem));
 }));
 
 // POST /api/content-ops/content-items
@@ -109,7 +135,7 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
   };
 
   const inserted = await db.insert(contentItems).values(newItem).returning();
-  res.status(201).json(inserted[0]);
+  res.status(201).json(normalizeContentItem(inserted[0]));
 }));
 
 // GET /api/content-ops/content-items/:id
@@ -121,7 +147,7 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Content item not found' });
   }
 
-  res.json(item[0]);
+  res.json(normalizeContentItem(item[0]));
 }));
 
 // PATCH /api/content-ops/content-items/:id
@@ -192,7 +218,7 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Content item not found' });
     }
 
-    res.json(updated[0]);
+    res.json(normalizeContentItem(updated[0]));
   } catch (error) {
     console.error('PATCH /api/content-ops/content-items/:id error:', error, 'id:', id, 'body:', body);
     return res.status(500).json({ error: 'Internal server error' });

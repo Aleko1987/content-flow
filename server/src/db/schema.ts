@@ -21,7 +21,7 @@ export const contentItems = pgTable('content_items', {
   priority: integer('priority').notNull().default(2),
   owner: text('owner'),
   notes: text('notes'),
-  mediaIds: jsonb('media_ids').$type<string[]>().default([]),
+  mediaIds: jsonb('media_ids').$type<string[]>().notNull().default([]),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -108,6 +108,7 @@ export const scheduledPosts = pgTable('scheduled_posts', {
   scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
   platforms: jsonb('platforms').$type<string[]>().notNull().default([]),
   status: varchar('status', { length: 50 }).notNull().default('planned'),
+  mediaIds: jsonb('media_ids').$type<string[]>().notNull().default([]),
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({

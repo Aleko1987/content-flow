@@ -38,7 +38,7 @@ export interface ApiContentItem {
   priority: number;
   owner: string | null;
   notes: string | null;
-  media_ids?: string[];
+  mediaIds: string[];
   created_at: string;
   updated_at: string;
 }

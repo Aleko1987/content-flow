@@ -32,6 +32,11 @@ function toCamelCaseChannel(obj: any): Channel {
 }
 
 function toCamelCaseContentItem(obj: any): ContentItem {
+  // Handle both camelCase (mediaIds) and snake_case (media_ids) for backward compatibility
+  const mediaIds = Array.isArray(obj.mediaIds) 
+    ? obj.mediaIds 
+    : (Array.isArray(obj.media_ids) ? obj.media_ids : []);
+  
   return {
     id: obj.id,
     title: obj.title,
@@ -42,9 +47,9 @@ function toCamelCaseContentItem(obj: any): ContentItem {
     priority: obj.priority as Priority,
     owner: obj.owner,
     notes: obj.notes,
-    mediaIds: Array.isArray(obj.media_ids) ? obj.media_ids : (obj.mediaIds || []),
-    createdAt: new Date(obj.created_at),
-    updatedAt: new Date(obj.updated_at),
+    mediaIds: mediaIds,
+    createdAt: new Date(obj.created_at || obj.createdAt),
+    updatedAt: new Date(obj.updated_at || obj.updatedAt),
   };
 }
 
