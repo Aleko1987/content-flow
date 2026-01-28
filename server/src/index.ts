@@ -56,6 +56,11 @@ app.use((req: Request, res: Response, next: NextFunction) => {
   next();
 });
 
+// Health check (production-safe, no DB, no auth)
+app.get('/healthz', (_req: Request, res: Response) => {
+  res.status(200).json({ ok: true });
+});
+
 // Health check
 app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
