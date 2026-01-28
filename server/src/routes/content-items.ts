@@ -3,6 +3,7 @@ import { db } from '../db/index.js';
 import { contentItems, contentItemMedia } from '../db/schema.js';
 import { eq, and, or, like, gte, lte, inArray } from 'drizzle-orm';
 import { asyncHandler } from '../middleware/error-handler.js';
+import { logger } from '../utils/logger.js';
 import type { Request, Response } from 'express';
 
 const router = Router();
@@ -16,46 +17,120 @@ const generateId = (): string => {
   });
 };
 
-// Helper to fetch mediaIds from content_item_media join table
-// SANITY CHECK: mediaIds is ALWAYS derived from content_item_media, never from content_items.media_ids.
-// If no media found, returns empty array (never null/undefined).
-const fetchMediaIdsForContentItem = async (contentItemId: string): Promise<string[]> => {
-  const mediaRows = await db
-    .select({ mediaAssetId: contentItemMedia.mediaAssetId })
-    .from(contentItemMedia)
-    .where(eq(contentItemMedia.contentItemId, contentItemId));
+// Helper to check if error is PostgreSQL "relation does not exist" (42P01)
+const isRelationNotFoundError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
   
-  return mediaRows.map(row => row.mediaAssetId);
+  // Check for PostgreSQL error code 42P01
+  const err = error as any;
+  if (err.code === '42P01') return true;
+  if (err.message && typeof err.message === 'string' && err.message.includes('relation') && err.message.includes('does not exist')) return true;
+  
+  // Check nested error (some drivers wrap errors)
+  if (err.cause && isRelationNotFoundError(err.cause)) return true;
+  
+  return false;
+};
+
+// Helper to normalize and validate mediaIds
+const normalizeMediaIds = (mediaIds: unknown): string[] => {
+  if (!Array.isArray(mediaIds)) {
+    return [];
+  }
+  return mediaIds.filter((id): id is string => typeof id === 'string' && id.length > 0);
+};
+
+// Helper to sync content_item_media join table with mediaIds array
+// Deletes existing associations and inserts new ones
+// If join table doesn't exist (42P01), silently skips join table operations (column-only mode)
+const syncContentItemMedia = async (itemId: string, mediaIds: string[]): Promise<void> => {
+  try {
+    // Delete existing associations
+    await db.delete(contentItemMedia).where(eq(contentItemMedia.contentItemId, itemId));
+    
+    // Insert new associations if any
+    if (mediaIds.length > 0) {
+      await db.insert(contentItemMedia).values(
+        mediaIds.map(mediaAssetId => ({
+          contentItemId: itemId,
+          mediaAssetId,
+          createdAt: new Date(),
+        }))
+      );
+    }
+  } catch (error) {
+    // If join table doesn't exist, skip join table operations (column-only mode)
+    if (isRelationNotFoundError(error)) {
+      logger.warn('content_item_media table not found, operating in column-only mode', { itemId });
+      return; // Silently skip - column already updated
+    }
+    // For other errors, log and rethrow
+    logger.error('Failed to sync content_item_media', { itemId, error: error instanceof Error ? error.message : 'Unknown error' });
+    throw error;
+  }
+};
+
+// Helper to fetch mediaIds from content_item_media join table
+// If no media found, returns empty array (never null/undefined).
+// If join table doesn't exist (42P01), returns empty array (fallback to column).
+const fetchMediaIdsForContentItem = async (contentItemId: string): Promise<string[]> => {
+  try {
+    const mediaRows = await db
+      .select({ mediaAssetId: contentItemMedia.mediaAssetId })
+      .from(contentItemMedia)
+      .where(eq(contentItemMedia.contentItemId, contentItemId));
+    
+    return mediaRows.map(row => row.mediaAssetId);
+  } catch (error) {
+    // If join table doesn't exist, return empty array (will fallback to column)
+    if (isRelationNotFoundError(error)) {
+      return [];
+    }
+    // For other errors, log and rethrow
+    logger.error('Failed to fetch mediaIds from join table', { contentItemId, error: error instanceof Error ? error.message : 'Unknown error' });
+    throw error;
+  }
 };
 
 // Helper to fetch mediaIds for multiple content items (batch)
+// If join table doesn't exist (42P01), returns empty map (fallback to column).
 const fetchMediaIdsForContentItems = async (contentItemIds: string[]): Promise<Record<string, string[]>> => {
   if (contentItemIds.length === 0) {
     return {};
   }
   
-  const mediaRows = await db
-    .select({ 
-      contentItemId: contentItemMedia.contentItemId,
-      mediaAssetId: contentItemMedia.mediaAssetId 
-    })
-    .from(contentItemMedia)
-    .where(inArray(contentItemMedia.contentItemId, contentItemIds));
-  
-  const result: Record<string, string[]> = {};
-  // Initialize all items with empty arrays
-  for (const id of contentItemIds) {
-    result[id] = [];
-  }
-  // Populate with actual media IDs
-  for (const row of mediaRows) {
-    if (!result[row.contentItemId]) {
-      result[row.contentItemId] = [];
+  try {
+    const mediaRows = await db
+      .select({ 
+        contentItemId: contentItemMedia.contentItemId,
+        mediaAssetId: contentItemMedia.mediaAssetId 
+      })
+      .from(contentItemMedia)
+      .where(inArray(contentItemMedia.contentItemId, contentItemIds));
+    
+    const result: Record<string, string[]> = {};
+    // Initialize all items with empty arrays
+    for (const id of contentItemIds) {
+      result[id] = [];
     }
-    result[row.contentItemId].push(row.mediaAssetId);
+    // Populate with actual media IDs
+    for (const row of mediaRows) {
+      if (!result[row.contentItemId]) {
+        result[row.contentItemId] = [];
+      }
+      result[row.contentItemId].push(row.mediaAssetId);
+    }
+    
+    return result;
+  } catch (error) {
+    // If join table doesn't exist, return empty map (will fallback to column)
+    if (isRelationNotFoundError(error)) {
+      return {};
+    }
+    // For other errors, log and rethrow
+    logger.error('Failed to fetch mediaIds from join table (batch)', { error: error instanceof Error ? error.message : 'Unknown error' });
+    throw error;
   }
-  
-  return result;
 };
 
 // Helper to normalize content item response with derived mediaIds
@@ -142,9 +217,15 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const mediaIdsMap = await fetchMediaIdsForContentItems(itemIds);
   
   // Transform to response with derived mediaIds
-  const response = items.map(item => 
-    normalizeContentItem(item, mediaIdsMap[item.id] || [])
-  );
+  // Fallback to column value if join table is empty but column has values (backward compatibility)
+  const response = items.map(item => {
+    const joinTableMediaIds = mediaIdsMap[item.id] || [];
+    // If join table has rows, use those; otherwise fallback to column if it has values
+    const finalMediaIds = joinTableMediaIds.length > 0 
+      ? joinTableMediaIds 
+      : (Array.isArray(item.mediaIds) && item.mediaIds.length > 0 ? item.mediaIds : []);
+    return normalizeContentItem(item, finalMediaIds);
+  });
   
   res.json(response);
 }));
@@ -167,15 +248,8 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     return res.status(400).json({ error: 'Title is required' });
   }
 
-  // Validate mediaIds if provided
-  if (mediaIds !== undefined) {
-    if (!Array.isArray(mediaIds)) {
-      return res.status(400).json({ error: 'mediaIds must be an array' });
-    }
-    if (!mediaIds.every((id: unknown) => typeof id === 'string')) {
-      return res.status(400).json({ error: 'mediaIds must be an array of strings' });
-    }
-  }
+  // Normalize and validate mediaIds if provided
+  const normalizedMediaIds = mediaIds !== undefined ? normalizeMediaIds(mediaIds) : [];
 
   const now = new Date();
   const itemId = generateId();
@@ -189,25 +263,17 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     priority,
     owner: owner || null,
     notes: notes || null,
+    mediaIds: normalizedMediaIds, // Store in column
     createdAt: now,
     updatedAt: now,
   };
 
   const inserted = await db.insert(contentItems).values(newItem).returning();
   
-  // Create content_item_media associations if mediaIds provided
-  if (mediaIds && Array.isArray(mediaIds) && mediaIds.length > 0) {
-    await db.insert(contentItemMedia).values(
-      mediaIds.map(mediaAssetId => ({
-        id: generateId(),
-        contentItemId: itemId,
-        mediaAssetId,
-        createdAt: now,
-      }))
-    );
-  }
+  // Sync join table with mediaIds
+  await syncContentItemMedia(itemId, normalizedMediaIds);
   
-  // Fetch derived mediaIds for response
+  // Fetch derived mediaIds for response (from join table)
   const derivedMediaIds = await fetchMediaIdsForContentItem(itemId);
   res.status(201).json(normalizeContentItem(inserted[0], derivedMediaIds));
 }));
@@ -221,9 +287,12 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Content item not found' });
   }
 
-  // Fetch derived mediaIds from join table
-  const mediaIds = await fetchMediaIdsForContentItem(id);
-  res.json(normalizeContentItem(item[0], mediaIds));
+  // Fetch derived mediaIds from join table, with fallback to column
+  const joinTableMediaIds = await fetchMediaIdsForContentItem(id);
+  const finalMediaIds = joinTableMediaIds.length > 0 
+    ? joinTableMediaIds 
+    : (Array.isArray(item[0].mediaIds) && item[0].mediaIds.length > 0 ? item[0].mediaIds : []);
+  res.json(normalizeContentItem(item[0], finalMediaIds));
 }));
 
 // PATCH /api/content-ops/content-items/:id
@@ -257,15 +326,11 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
       }
     }
 
-    // Handle mediaIds separately (update content_item_media join table)
+    // Handle mediaIds separately (update both column and join table)
     if ('mediaIds' in body) {
-      if (!Array.isArray(body.mediaIds)) {
-        return res.status(400).json({ error: 'mediaIds must be an array' });
-      }
-      if (!body.mediaIds.every((id: unknown) => typeof id === 'string')) {
-        return res.status(400).json({ error: 'mediaIds must be an array of strings' });
-      }
-      mediaIdsToUpdate = body.mediaIds as string[];
+      mediaIdsToUpdate = normalizeMediaIds(body.mediaIds);
+      // Also update the column
+      safeUpdates.mediaIds = mediaIdsToUpdate;
     }
 
     // Validate status if provided
@@ -279,7 +344,7 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
     // Always set updatedAt
     const now = new Date();
 
-    // Update content item fields (excluding mediaIds - that's in join table)
+    // Update content item fields (including mediaIds in column if provided)
     const updated = await db
       .update(contentItems)
       .set({
@@ -293,27 +358,17 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Content item not found' });
     }
 
-    // Update content_item_media associations if mediaIds provided
+    // Sync join table if mediaIds provided in request
     if (mediaIdsToUpdate !== undefined) {
-      // Delete existing associations
-      await db.delete(contentItemMedia).where(eq(contentItemMedia.contentItemId, id));
-      
-      // Insert new associations
-      if (mediaIdsToUpdate.length > 0) {
-        await db.insert(contentItemMedia).values(
-          mediaIdsToUpdate.map(mediaAssetId => ({
-            id: generateId(),
-            contentItemId: id,
-            mediaAssetId,
-            createdAt: now,
-          }))
-        );
-      }
+      await syncContentItemMedia(id, mediaIdsToUpdate);
     }
 
-    // Fetch derived mediaIds for response (always from join table)
-    const derivedMediaIds = await fetchMediaIdsForContentItem(id);
-    res.json(normalizeContentItem(updated[0], derivedMediaIds));
+    // Fetch derived mediaIds for response (from join table, with fallback to column)
+    const joinTableMediaIds = await fetchMediaIdsForContentItem(id);
+    const finalMediaIds = joinTableMediaIds.length > 0 
+      ? joinTableMediaIds 
+      : (Array.isArray(updated[0].mediaIds) && updated[0].mediaIds.length > 0 ? updated[0].mediaIds : []);
+    res.json(normalizeContentItem(updated[0], finalMediaIds));
   } catch (error) {
     console.error('PATCH /api/content-ops/content-items/:id error:', error, 'id:', id, 'body:', body);
     return res.status(500).json({ error: 'Internal server error' });

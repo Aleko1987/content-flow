@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index, primaryKey } from 'drizzle-orm/pg-core';
 
 // Channels table
 export const channels = pgTable('channels', {
@@ -45,13 +45,13 @@ export const mediaAssets = pgTable('media_assets', {
 // This is the source of truth for content item media associations.
 // mediaIds in API responses is ALWAYS derived from this table, never from content_items.media_ids.
 export const contentItemMedia = pgTable('content_item_media', {
-  id: text('id').primaryKey(),
   contentItemId: text('content_item_id').notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
   mediaAssetId: text('media_asset_id').notNull().references(() => mediaAssets.id, { onDelete: 'cascade' }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
-}, (table) => ({
-  // Ensure one content item can't have the same media asset twice
-  uniqueContentMedia: unique().on(table.contentItemId, table.mediaAssetId),
+}, (t) => ({
+  pk: primaryKey({ columns: [t.contentItemId, t.mediaAssetId] }),
+  itemIdx: index('idx_content_item_media_item').on(t.contentItemId),
+  assetIdx: index('idx_content_item_media_asset').on(t.mediaAssetId),
 }));
 
 // Channel variants table (unique on content_item_id + channel_key)
