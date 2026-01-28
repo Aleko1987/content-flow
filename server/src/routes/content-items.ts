@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { contentItems } from '../db/schema.js';
+import { contentItems, contentItemMedia } from '../db/schema.js';
 import { eq, and, or, like, gte, lte, inArray } from 'drizzle-orm';
 import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
@@ -16,16 +16,53 @@ const generateId = (): string => {
   });
 };
 
-// Helper to ensure mediaIds is always an array
-const normalizeMediaIds = (mediaIds: unknown): string[] => {
-  if (Array.isArray(mediaIds)) {
-    return mediaIds.filter((id): id is string => typeof id === 'string');
-  }
-  return [];
+// Helper to fetch mediaIds from content_item_media join table
+// SANITY CHECK: mediaIds is ALWAYS derived from content_item_media, never from content_items.media_ids.
+// If no media found, returns empty array (never null/undefined).
+const fetchMediaIdsForContentItem = async (contentItemId: string): Promise<string[]> => {
+  const mediaRows = await db
+    .select({ mediaAssetId: contentItemMedia.mediaAssetId })
+    .from(contentItemMedia)
+    .where(eq(contentItemMedia.contentItemId, contentItemId));
+  
+  return mediaRows.map(row => row.mediaAssetId);
 };
 
-// Helper to normalize content item response
-const normalizeContentItem = (item: any) => {
+// Helper to fetch mediaIds for multiple content items (batch)
+const fetchMediaIdsForContentItems = async (contentItemIds: string[]): Promise<Record<string, string[]>> => {
+  if (contentItemIds.length === 0) {
+    return {};
+  }
+  
+  const mediaRows = await db
+    .select({ 
+      contentItemId: contentItemMedia.contentItemId,
+      mediaAssetId: contentItemMedia.mediaAssetId 
+    })
+    .from(contentItemMedia)
+    .where(inArray(contentItemMedia.contentItemId, contentItemIds));
+  
+  const result: Record<string, string[]> = {};
+  // Initialize all items with empty arrays
+  for (const id of contentItemIds) {
+    result[id] = [];
+  }
+  // Populate with actual media IDs
+  for (const row of mediaRows) {
+    if (!result[row.contentItemId]) {
+      result[row.contentItemId] = [];
+    }
+    result[row.contentItemId].push(row.mediaAssetId);
+  }
+  
+  return result;
+};
+
+// Helper to normalize content item response with derived mediaIds
+const normalizeContentItem = (item: any, mediaIds: string[] = []) => {
+  // Ensure mediaIds is always an array (never null/undefined)
+  const safeMediaIds = Array.isArray(mediaIds) ? mediaIds : [];
+  
   return {
     id: item.id,
     title: item.title,
@@ -36,7 +73,7 @@ const normalizeContentItem = (item: any) => {
     priority: item.priority,
     owner: item.owner,
     notes: item.notes,
-    mediaIds: normalizeMediaIds(item.mediaIds),
+    mediaIds: safeMediaIds, // Always derived from content_item_media, never from item.mediaIds
     createdAt: item.createdAt instanceof Date ? item.createdAt.toISOString() : item.createdAt,
     updatedAt: item.updatedAt instanceof Date ? item.updatedAt.toISOString() : item.updatedAt,
   };
@@ -99,7 +136,17 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   }
 
   const items = await query;
-  res.json(items.map(normalizeContentItem));
+  
+  // Fetch mediaIds for all items from join table
+  const itemIds = items.map(item => item.id);
+  const mediaIdsMap = await fetchMediaIdsForContentItems(itemIds);
+  
+  // Transform to response with derived mediaIds
+  const response = items.map(item => 
+    normalizeContentItem(item, mediaIdsMap[item.id] || [])
+  );
+  
+  res.json(response);
 }));
 
 // POST /api/content-ops/content-items
@@ -113,15 +160,27 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
     priority = 2,
     owner,
     notes,
+    mediaIds, // Optional: array of media asset IDs to associate
   } = req.body;
 
   if (!title) {
     return res.status(400).json({ error: 'Title is required' });
   }
 
+  // Validate mediaIds if provided
+  if (mediaIds !== undefined) {
+    if (!Array.isArray(mediaIds)) {
+      return res.status(400).json({ error: 'mediaIds must be an array' });
+    }
+    if (!mediaIds.every((id: unknown) => typeof id === 'string')) {
+      return res.status(400).json({ error: 'mediaIds must be an array of strings' });
+    }
+  }
+
   const now = new Date();
+  const itemId = generateId();
   const newItem = {
-    id: generateId(),
+    id: itemId,
     title,
     hook: hook || null,
     pillar: pillar || null,
@@ -135,7 +194,22 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
   };
 
   const inserted = await db.insert(contentItems).values(newItem).returning();
-  res.status(201).json(normalizeContentItem(inserted[0]));
+  
+  // Create content_item_media associations if mediaIds provided
+  if (mediaIds && Array.isArray(mediaIds) && mediaIds.length > 0) {
+    await db.insert(contentItemMedia).values(
+      mediaIds.map(mediaAssetId => ({
+        id: generateId(),
+        contentItemId: itemId,
+        mediaAssetId,
+        createdAt: now,
+      }))
+    );
+  }
+  
+  // Fetch derived mediaIds for response
+  const derivedMediaIds = await fetchMediaIdsForContentItem(itemId);
+  res.status(201).json(normalizeContentItem(inserted[0], derivedMediaIds));
 }));
 
 // GET /api/content-ops/content-items/:id
@@ -147,7 +221,9 @@ router.get('/:id', asyncHandler(async (req: Request, res: Response) => {
     return res.status(404).json({ error: 'Content item not found' });
   }
 
-  res.json(normalizeContentItem(item[0]));
+  // Fetch derived mediaIds from join table
+  const mediaIds = await fetchMediaIdsForContentItem(id);
+  res.json(normalizeContentItem(item[0], mediaIds));
 }));
 
 // PATCH /api/content-ops/content-items/:id
@@ -170,14 +246,26 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
 
     const item = items[0];
 
-    // Build safe updates object containing only allowed keys
-    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes', 'mediaIds'];
+    // Build safe updates object containing only allowed keys (exclude mediaIds - handled separately)
+    const allowedFields = ['title', 'hook', 'pillar', 'format', 'status', 'priority', 'owner', 'notes'];
     const safeUpdates: Record<string, unknown> = {};
+    let mediaIdsToUpdate: string[] | undefined = undefined;
 
     for (const field of allowedFields) {
       if (field in body) {
         safeUpdates[field] = body[field];
       }
+    }
+
+    // Handle mediaIds separately (update content_item_media join table)
+    if ('mediaIds' in body) {
+      if (!Array.isArray(body.mediaIds)) {
+        return res.status(400).json({ error: 'mediaIds must be an array' });
+      }
+      if (!body.mediaIds.every((id: unknown) => typeof id === 'string')) {
+        return res.status(400).json({ error: 'mediaIds must be an array of strings' });
+      }
+      mediaIdsToUpdate = body.mediaIds as string[];
     }
 
     // Validate status if provided
@@ -188,23 +276,10 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
       }
     }
 
-    // Validate mediaIds if provided
-    if (safeUpdates.mediaIds !== undefined) {
-      if (!Array.isArray(safeUpdates.mediaIds)) {
-        return res.status(400).json({ error: 'mediaIds must be an array' });
-      }
-      if (!safeUpdates.mediaIds.every((id: unknown) => typeof id === 'string')) {
-        return res.status(400).json({ error: 'mediaIds must be an array of strings' });
-      }
-    }
-
-    // Always set updatedAt to new ISO string
+    // Always set updatedAt
     const now = new Date();
-    
-    // Apply updates to item with Object.assign
-    Object.assign(item, safeUpdates, { updatedAt: now.toISOString() });
 
-    // Save back to database (use Date object for database)
+    // Update content item fields (excluding mediaIds - that's in join table)
     const updated = await db
       .update(contentItems)
       .set({
@@ -218,7 +293,27 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Content item not found' });
     }
 
-    res.json(normalizeContentItem(updated[0]));
+    // Update content_item_media associations if mediaIds provided
+    if (mediaIdsToUpdate !== undefined) {
+      // Delete existing associations
+      await db.delete(contentItemMedia).where(eq(contentItemMedia.contentItemId, id));
+      
+      // Insert new associations
+      if (mediaIdsToUpdate.length > 0) {
+        await db.insert(contentItemMedia).values(
+          mediaIdsToUpdate.map(mediaAssetId => ({
+            id: generateId(),
+            contentItemId: id,
+            mediaAssetId,
+            createdAt: now,
+          }))
+        );
+      }
+    }
+
+    // Fetch derived mediaIds for response (always from join table)
+    const derivedMediaIds = await fetchMediaIdsForContentItem(id);
+    res.json(normalizeContentItem(updated[0], derivedMediaIds));
   } catch (error) {
     console.error('PATCH /api/content-ops/content-items/:id error:', error, 'id:', id, 'body:', body);
     return res.status(500).json({ error: 'Internal server error' });

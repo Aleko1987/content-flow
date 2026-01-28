@@ -11,6 +11,8 @@ export const channels = pgTable('channels', {
 });
 
 // Content items table
+// Note: mediaIds column is kept for backward compatibility but should not be used.
+// mediaIds is now derived from content_item_media join table.
 export const contentItems = pgTable('content_items', {
   id: text('id').primaryKey(),
   title: varchar('title', { length: 500 }).notNull(),
@@ -21,7 +23,7 @@ export const contentItems = pgTable('content_items', {
   priority: integer('priority').notNull().default(2),
   owner: text('owner'),
   notes: text('notes'),
-  mediaIds: jsonb('media_ids').$type<string[]>().notNull().default([]),
+  mediaIds: jsonb('media_ids').$type<string[]>().notNull().default([]), // DEPRECATED: Use content_item_media instead
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 });
@@ -38,6 +40,19 @@ export const mediaAssets = pgTable('media_assets', {
   sha256: varchar('sha256', { length: 64 }),
   createdAt: timestamp('created_at').notNull().defaultNow(),
 });
+
+// Content item media join table (many-to-many: content_items <-> media_assets)
+// This is the source of truth for content item media associations.
+// mediaIds in API responses is ALWAYS derived from this table, never from content_items.media_ids.
+export const contentItemMedia = pgTable('content_item_media', {
+  id: text('id').primaryKey(),
+  contentItemId: text('content_item_id').notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
+  mediaAssetId: text('media_asset_id').notNull().references(() => mediaAssets.id, { onDelete: 'cascade' }),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  // Ensure one content item can't have the same media asset twice
+  uniqueContentMedia: unique().on(table.contentItemId, table.mediaAssetId),
+}));
 
 // Channel variants table (unique on content_item_id + channel_key)
 export const channelVariants = pgTable('channel_variants', {

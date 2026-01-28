@@ -1,7 +1,7 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { db } from '../db/index.js';
 import { scheduledPosts, scheduledPostMedia } from '../db/schema.js';
-import { eq, and, gte, lte } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
 
@@ -51,6 +51,9 @@ const generateId = (): string => {
 };
 
 // Helper to transform scheduled post response with derived mediaIds
+// SANITY CHECK: mediaIds is ALWAYS derived from joined media rows (scheduled_post_media),
+// never from scheduled_posts.media_ids (which doesn't exist in the schema).
+// If media array is empty, mediaIds must be [].
 const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPostMedia.$inferSelect[]) => {
   const mediaArray = media.map(m => ({
     id: m.id,
@@ -61,8 +64,12 @@ const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPost
     storageUrl: m.storageUrl || '',
   }));
 
-  // Derive mediaIds from media array (source of truth)
+  // Derive mediaIds from media array (source of truth - never use post.mediaIds from DB)
   const mediaIds = mediaArray.map(m => m.id);
+  // Ensure empty array if no media (never null/undefined)
+  if (!Array.isArray(mediaIds)) {
+    throw new Error('mediaIds must be an array');
+  }
 
   return {
     id: post.id,
@@ -112,14 +119,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
       posts = [];
     }
 
-    // Fetch media for all posts
+    // Fetch media for all posts (optimized: use WHERE clause instead of fetching all)
     const postIds = posts.map(p => p.id);
     let mediaItems: typeof scheduledPostMedia.$inferSelect[] = [];
     
     if (postIds.length > 0) {
-      // Fetch all media for the posts
-      const allMedia = await db.select().from(scheduledPostMedia);
-      mediaItems = allMedia.filter(m => postIds.includes(m.scheduledPostId));
+      // Fetch only media for the posts in this range
+      mediaItems = await db
+        .select()
+        .from(scheduledPostMedia)
+        .where(inArray(scheduledPostMedia.scheduledPostId, postIds));
     }
 
     // Group media by post

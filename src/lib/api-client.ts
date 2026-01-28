@@ -38,9 +38,9 @@ export interface ApiContentItem {
   priority: number;
   owner: string | null;
   notes: string | null;
-  mediaIds: string[];
-  created_at: string;
-  updated_at: string;
+  mediaIds: string[]; // Always derived from content_item_media join table, never null/undefined
+  createdAt: string; // camelCase for consistency with scheduled-posts API
+  updatedAt: string; // camelCase for consistency with scheduled-posts API
 }
 
 export interface ApiChannelVariant {
