@@ -32,6 +32,19 @@ const isRelationNotFoundError = (error: unknown): boolean => {
   return false;
 };
 
+// Helper to check if error is PostgreSQL "foreign key violation" (23503)
+const isForeignKeyViolationError = (error: unknown): boolean => {
+  if (!error || typeof error !== 'object') return false;
+  
+  const err = error as any;
+  if (err.code === '23503') return true;
+  
+  // Check nested error (some drivers wrap errors)
+  if (err.cause && isForeignKeyViolationError(err.cause)) return true;
+  
+  return false;
+};
+
 // Helper to normalize and validate mediaIds
 const normalizeMediaIds = (mediaIds: unknown): string[] => {
   if (!Array.isArray(mediaIds)) {
@@ -43,6 +56,7 @@ const normalizeMediaIds = (mediaIds: unknown): string[] => {
 // Helper to sync content_item_media join table with mediaIds array
 // Deletes existing associations and inserts new ones
 // If join table doesn't exist (42P01), silently skips join table operations (column-only mode)
+// If foreign key violation (23503), throws error with code 'FK_VIOLATION' for caller to handle
 const syncContentItemMedia = async (itemId: string, mediaIds: string[]): Promise<void> => {
   try {
     // Delete existing associations
@@ -64,8 +78,25 @@ const syncContentItemMedia = async (itemId: string, mediaIds: string[]): Promise
       logger.warn('content_item_media table not found, operating in column-only mode', { itemId });
       return; // Silently skip - column already updated
     }
-    // For other errors, log and rethrow
-    logger.error('Failed to sync content_item_media', { itemId, error: error instanceof Error ? error.message : 'Unknown error' });
+    // If foreign key violation, throw specific error for caller to handle
+    if (isForeignKeyViolationError(error)) {
+      const err = error as any;
+      const constraint = err.constraint || 'unknown';
+      logger.error('Foreign key violation in content_item_media', { 
+        itemId, 
+        code: err.code, 
+        constraint 
+      });
+      const fkError = new Error('FK_VIOLATION') as any;
+      fkError.code = 'FK_VIOLATION';
+      throw fkError;
+    }
+    // For other errors: log error code + constraint (no payload) and rethrow
+    const err = error as any;
+    logger.error('Failed to sync content_item_media', { 
+      code: err.code || 'unknown', 
+      constraint: err.constraint || 'unknown'
+    });
     throw error;
   }
 };
@@ -271,7 +302,23 @@ router.post('/', asyncHandler(async (req: Request, res: Response) => {
   const inserted = await db.insert(contentItems).values(newItem).returning();
   
   // Sync join table with mediaIds
-  await syncContentItemMedia(itemId, normalizedMediaIds);
+  try {
+    await syncContentItemMedia(itemId, normalizedMediaIds);
+  } catch (error: any) {
+    // If foreign key violation, return 400 with clear error
+    if (error.code === 'FK_VIOLATION') {
+      return res.status(400).json({ 
+        error: 'invalid mediaIds', 
+        message: 'one or more mediaIds do not exist' 
+      });
+    }
+    // For other errors, log and return 500
+    logger.error('Failed to sync content_item_media in POST', { 
+      itemId, 
+      error: error instanceof Error ? error.message : 'Unknown error' 
+    });
+    return res.status(500).json({ error: 'Internal server error' });
+  }
   
   // Fetch derived mediaIds for response (from join table)
   const derivedMediaIds = await fetchMediaIdsForContentItem(itemId);
@@ -360,7 +407,23 @@ router.patch('/:id', asyncHandler(async (req: Request, res: Response) => {
 
     // Sync join table if mediaIds provided in request
     if (mediaIdsToUpdate !== undefined) {
-      await syncContentItemMedia(id, mediaIdsToUpdate);
+      try {
+        await syncContentItemMedia(id, mediaIdsToUpdate);
+      } catch (error: any) {
+        // If foreign key violation, return 400 with clear error
+        if (error.code === 'FK_VIOLATION') {
+          return res.status(400).json({ 
+            error: 'invalid mediaIds', 
+            message: 'one or more mediaIds do not exist' 
+          });
+        }
+        // For other errors, log and return 500
+        logger.error('Failed to sync content_item_media in PATCH', { 
+          id, 
+          error: error instanceof Error ? error.message : 'Unknown error' 
+        });
+        return res.status(500).json({ error: 'Internal server error' });
+      }
     }
 
     // Fetch derived mediaIds for response (from join table, with fallback to column)

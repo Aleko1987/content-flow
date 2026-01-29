@@ -100,6 +100,58 @@ router.post('/complete', asyncHandler(async (req: Request, res: Response) => {
   res.status(201).json(inserted[0]);
 }));
 
+// POST /api/content-ops/media-assets
+router.post('/', asyncHandler(async (req: Request, res: Response) => {
+  const { type, url, title, source } = req.body;
+
+  if (!type || typeof type !== 'string') {
+    return res.status(400).json({ error: 'type is required and must be a string' });
+  }
+
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ error: 'url is required and must be a string' });
+  }
+
+  // Generate required fields
+  const assetId = generateId();
+  const bucket = process.env.R2_BUCKET || 'default-bucket';
+  const timestamp = Date.now();
+  const objectKey = title 
+    ? `media/${timestamp}-${title.replace(/[^a-zA-Z0-9.-]/g, '_')}`
+    : `media/${timestamp}-${assetId}`;
+
+  const newAsset = {
+    id: assetId,
+    storageProvider: 'r2',
+    bucket,
+    objectKey,
+    publicUrl: url,
+    mimeType: type,
+    sizeBytes: null,
+    sha256: null,
+    createdAt: new Date(),
+  };
+
+  const inserted = await db.insert(mediaAssets).values(newAsset).returning();
+  
+  // Return in camelCase with ISO timestamps
+  const response = {
+    id: inserted[0].id,
+    storageProvider: inserted[0].storageProvider,
+    bucket: inserted[0].bucket,
+    objectKey: inserted[0].objectKey,
+    publicUrl: inserted[0].publicUrl,
+    mimeType: inserted[0].mimeType,
+    sizeBytes: inserted[0].sizeBytes,
+    sha256: inserted[0].sha256,
+    createdAt: inserted[0].createdAt instanceof Date 
+      ? inserted[0].createdAt.toISOString() 
+      : inserted[0].createdAt,
+  };
+
+  res.status(200).json(response);
+}));
+
 // GET /api/content-ops/media-assets
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const { search, type, limit = '50' } = req.query;
