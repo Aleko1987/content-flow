@@ -340,9 +340,10 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }));
     
     try {
-      // Call API - idempotent delete normalizes 404/alreadyDeleted as success
+      // Call API - idempotent delete normalizes 200/204/404/alreadyDeleted as success
       await apiClient.contentItems.delete(id);
       // Success: item already removed optimistically, no further action needed
+      // Note: API client normalizes 404/alreadyDeleted as success, so no error toast
     } catch (error) {
       // Real error: rollback by restoring the item
       if (itemToDelete && itemIndex >= 0) {
@@ -388,9 +389,10 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     }));
     
     try {
-      // Call API - idempotent delete normalizes 404/alreadyDeleted as success
+      // Call API - idempotent delete normalizes 200/204/404/alreadyDeleted as success
       await apiClient.mediaAssets.delete(id);
       // Success: asset already removed optimistically, no further action needed
+      // Note: API client normalizes 404/alreadyDeleted as success, so no error toast
     } catch (error) {
       // Real error: rollback by restoring the asset at its original index
       if (assetToDelete && assetIndex >= 0) {
