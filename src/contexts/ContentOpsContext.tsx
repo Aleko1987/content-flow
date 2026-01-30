@@ -17,6 +17,7 @@ import type {
   ContentItemWithVariants,
   PublishTaskWithDetails,
   PublishLogWithDetails,
+  MediaAsset,
 } from '@/types/content-ops';
 
 // Helper to convert snake_case API responses to camelCase
@@ -98,6 +99,20 @@ function toCamelCaseLog(obj: any): PublishLog {
   };
 }
 
+function toCamelCaseMediaAsset(obj: any): MediaAsset {
+  return {
+    id: obj.id,
+    storageProvider: obj.storage_provider || obj.storageProvider,
+    bucket: obj.bucket,
+    objectKey: obj.object_key || obj.objectKey,
+    publicUrl: obj.public_url || obj.publicUrl,
+    mimeType: obj.mime_type || obj.mimeType,
+    sizeBytes: obj.size_bytes || obj.sizeBytes,
+    sha256: obj.sha256,
+    createdAt: new Date(obj.created_at || obj.createdAt),
+  };
+}
+
 // Helper to convert camelCase to snake_case for API requests
 function toSnakeCase<T extends Record<string, any>>(obj: T): any {
   const result: any = {};
@@ -115,6 +130,7 @@ interface ContentOpsState {
   tasks: PublishTask[];
   logs: PublishLog[];
   events: IntentEvent[];
+  mediaAssets: MediaAsset[];
 }
 
 interface ContentOpsContextType {
@@ -132,6 +148,9 @@ interface ContentOpsContextType {
   createContentItem: (data: Partial<ContentItem>) => Promise<ContentItem>;
   updateContentItem: (id: string, updates: Partial<ContentItem>) => Promise<void>;
   deleteContentItem: (id: string) => Promise<void>;
+  
+  // Media asset operations
+  deleteMediaAsset: (id: string) => Promise<void>;
   
   // Variant operations
   getVariantsForContent: (contentItemId: string) => ChannelVariant[];
@@ -172,6 +191,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     tasks: [],
     logs: [],
     events: [],
+    mediaAssets: [],
   });
   const [loading, setLoading] = useState(true);
   const { toast } = useToast();
@@ -329,11 +349,18 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
         setState(prev => {
           const newContentItems = [...prev.contentItems];
           newContentItems.splice(itemIndex, 0, itemToDelete);
+          
+          // Dedupe-safe rollback: only restore variants/tasks not already present
+          const existingVariantIds = new Set(prev.variants.map(v => v.id));
+          const existingTaskIds = new Set(prev.tasks.map(t => t.id));
+          const variantsToRestore = relatedVariants.filter(v => !existingVariantIds.has(v.id));
+          const tasksToRestore = relatedTasks.filter(t => !existingTaskIds.has(t.id));
+          
           return {
             ...prev,
             contentItems: newContentItems,
-            variants: [...prev.variants, ...relatedVariants],
-            tasks: [...prev.tasks, ...relatedTasks],
+            variants: [...prev.variants, ...variantsToRestore],
+            tasks: [...prev.tasks, ...tasksToRestore],
           };
         });
       }
@@ -347,6 +374,45 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       throw error;
     }
   }, [state.contentItems, state.variants, state.tasks, toast]);
+
+  // Media asset operations
+  const deleteMediaAsset = useCallback(async (id: string) => {
+    // Optimistic update: remove asset immediately from UI
+    const assetToDelete = state.mediaAssets.find(a => a.id === id);
+    const assetIndex = assetToDelete ? state.mediaAssets.findIndex(a => a.id === id) : -1;
+    
+    // Optimistically remove from state
+    setState(prev => ({
+      ...prev,
+      mediaAssets: prev.mediaAssets.filter(a => a.id !== id),
+    }));
+    
+    try {
+      // Call API - idempotent delete normalizes 404/alreadyDeleted as success
+      await apiClient.mediaAssets.delete(id);
+      // Success: asset already removed optimistically, no further action needed
+    } catch (error) {
+      // Real error: rollback by restoring the asset at its original index
+      if (assetToDelete && assetIndex >= 0) {
+        setState(prev => {
+          const newMediaAssets = [...prev.mediaAssets];
+          newMediaAssets.splice(assetIndex, 0, assetToDelete);
+          return {
+            ...prev,
+            mediaAssets: newMediaAssets,
+          };
+        });
+      }
+      
+      console.error('Failed to delete media asset:', error);
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to delete media asset',
+        variant: 'destructive',
+      });
+      throw error;
+    }
+  }, [state.mediaAssets, toast]);
 
   // Variant operations
   const getVariantsForContent = useCallback((contentItemId: string) => 
@@ -659,6 +725,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
     createContentItem,
     updateContentItem,
     deleteContentItem,
+    deleteMediaAsset,
     getVariantsForContent,
     createVariant,
     updateVariant,
