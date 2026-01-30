@@ -303,15 +303,41 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
   }, [toast]);
 
   const deleteContentItem = useCallback(async (id: string) => {
+    // Optimistic update: remove item immediately from UI
+    const itemToDelete = state.contentItems.find(i => i.id === id);
+    const itemIndex = itemToDelete ? state.contentItems.findIndex(i => i.id === id) : -1;
+    
+    // Store related data for potential rollback
+    const relatedVariants = state.variants.filter(v => v.contentItemId === id);
+    const relatedTasks = state.tasks.filter(t => t.contentItemId === id);
+    
+    // Optimistically remove from state
+    setState(prev => ({
+      ...prev,
+      contentItems: prev.contentItems.filter(i => i.id !== id),
+      variants: prev.variants.filter(v => v.contentItemId !== id),
+      tasks: prev.tasks.filter(t => t.contentItemId !== id),
+    }));
+    
     try {
+      // Call API - idempotent delete normalizes 404/alreadyDeleted as success
       await apiClient.contentItems.delete(id);
-      setState(prev => ({
-        ...prev,
-        contentItems: prev.contentItems.filter(i => i.id !== id),
-        variants: prev.variants.filter(v => v.contentItemId !== id),
-        tasks: prev.tasks.filter(t => t.contentItemId !== id),
-      }));
+      // Success: item already removed optimistically, no further action needed
     } catch (error) {
+      // Real error: rollback by restoring the item
+      if (itemToDelete && itemIndex >= 0) {
+        setState(prev => {
+          const newContentItems = [...prev.contentItems];
+          newContentItems.splice(itemIndex, 0, itemToDelete);
+          return {
+            ...prev,
+            contentItems: newContentItems,
+            variants: [...prev.variants, ...relatedVariants],
+            tasks: [...prev.tasks, ...relatedTasks],
+          };
+        });
+      }
+      
       console.error('Failed to delete content item:', error);
       toast({
         title: 'Error',
@@ -320,7 +346,7 @@ export const ContentOpsProvider: React.FC<{ children: React.ReactNode }> = ({ ch
       });
       throw error;
     }
-  }, [toast]);
+  }, [state.contentItems, state.variants, state.tasks, toast]);
 
   // Variant operations
   const getVariantsForContent = useCallback((contentItemId: string) => 

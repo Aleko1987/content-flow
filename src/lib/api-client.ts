@@ -18,6 +18,43 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+// Helper for idempotent DELETE requests
+// Treats 200 (with or without alreadyDeleted), 204, and 404 as success
+export interface IdempotentDeleteResult {
+  ok: true;
+  alreadyDeleted?: boolean;
+}
+
+async function handleIdempotentDelete(response: Response): Promise<IdempotentDeleteResult> {
+  // 204 No Content - success
+  if (response.status === 204) {
+    return { ok: true };
+  }
+  
+  // 404 Not Found - treat as success for idempotent deletes
+  if (response.status === 404) {
+    return { ok: true, alreadyDeleted: true };
+  }
+  
+  // 200 OK - parse response body
+  if (response.status === 200) {
+    try {
+      const body = await response.json();
+      // Backend returns { ok: true, id, alreadyDeleted?: true }
+      return { ok: true, alreadyDeleted: body.alreadyDeleted === true };
+    } catch {
+      // If body parsing fails but status is 200, still treat as success
+      return { ok: true };
+    }
+  }
+  
+  // All other statuses are errors
+  const error: ApiError = await response.json().catch(() => ({
+    error: `HTTP ${response.status}: ${response.statusText}`,
+  }));
+  throw new Error(error.error || `HTTP ${response.status}`);
+}
+
 // API response types (snake_case from server)
 export interface ApiChannel {
   id: string;
@@ -152,10 +189,10 @@ export const apiClient = {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status }),
       }).then(r => handleResponse<ApiContentItem>(r)),
-    delete: (id: string): Promise<void> =>
+    delete: (id: string): Promise<IdempotentDeleteResult> =>
       fetch(`${API_FULL_URL}/content-items/${id}`, {
         method: 'DELETE',
-      }).then(() => undefined),
+      }).then(handleIdempotentDelete),
   },
 
   // Variants
@@ -296,10 +333,10 @@ export const apiClient = {
       const query = searchParams.toString();
       return fetch(`${API_FULL_URL}/media-assets${query ? `?${query}` : ''}`).then(r => handleResponse<unknown>(r));
     },
-    delete: (id: string): Promise<void> =>
+    delete: (id: string): Promise<IdempotentDeleteResult> =>
       fetch(`${API_FULL_URL}/media-assets/${id}`, {
         method: 'DELETE',
-      }).then(() => undefined),
+      }).then(handleIdempotentDelete),
   },
 
   // Media (R2 uploads)
