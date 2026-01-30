@@ -448,10 +448,11 @@ router.delete('/:id', asyncHandler(async (req: Request, res: Response) => {
     .returning();
 
   if (deleted.length === 0) {
-    return res.status(404).json({ error: 'Content item not found' });
+    // Idempotent: return 200 with alreadyDeleted flag instead of 404
+    return res.status(200).json({ ok: true, id, alreadyDeleted: true });
   }
 
-  res.status(204).send();
+  res.status(200).json({ ok: true, id });
 }));
 
 export default router;

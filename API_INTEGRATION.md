@@ -56,7 +56,7 @@ curl -X PATCH http://localhost:3001/api/content-ops/content-items/{id} \
   -H "Content-Type: application/json" \
   -d '{"status":"ready","priority":1}'
 
-# Delete content item
+# Delete content item (idempotent: returns 200 with { ok: true, id } or { ok: true, id, alreadyDeleted: true })
 curl -X DELETE http://localhost:3001/api/content-ops/content-items/{id}
 ```
 
@@ -181,6 +181,16 @@ curl -X PUT http://localhost:3001/api/content-ops/publish-logs/{id} \
 
 # Delete log
 curl -X DELETE http://localhost:3001/api/content-ops/publish-logs/{id}
+```
+
+### Media Assets
+
+```bash
+# Get all media assets
+curl http://localhost:3001/api/content-ops/media-assets
+
+# Delete media asset (idempotent: returns 200 with { ok: true, id } or { ok: true, id, alreadyDeleted: true })
+curl -X DELETE http://localhost:3001/api/content-ops/media-assets/{id}
 ```
 
 ### Seed
