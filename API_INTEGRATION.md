@@ -278,6 +278,25 @@ curl -X POST http://localhost:3001/api/content-ops/seed-demo
 
 ## CORS Configuration
 
+### Local Development (Vite Proxy)
+
+To avoid CORS issues when developing locally against the Render backend, the Vite dev server uses a proxy:
+
+- **Vite Proxy**: Configured in `vite.config.ts` to forward `/api/*` requests to `https://content-flow-ouru.onrender.com`
+- **Local API Base**: Set `VITE_API_BASE_URL=http://localhost:8080` in `.env.local` (gitignored)
+- **How it works**: Browser makes requests to `http://localhost:8080/api/content-ops/*`, Vite proxy forwards to Render backend
+- **Benefits**: No CORS errors, no backend changes needed, production builds unaffected
+
+**Setup for local dev:**
+1. Create `.env.local` in the project root:
+   ```
+   VITE_API_BASE_URL=http://localhost:8080
+   ```
+2. Restart Vite dev server after creating/updating `.env.local`
+3. All API calls will now go through the proxy automatically
+
+### Backend CORS (for direct API access)
+
 CORS is configured in `server/src/middleware/cors.ts` to allow:
 - `http://localhost:8080` (Vite dev server)
 - Origins specified in `CORS_ORIGINS` env var
@@ -289,10 +308,16 @@ CORS_ORIGINS=https://your-production-domain.com
 
 ## Environment Variables
 
-### Frontend (.env in root)
+### Frontend
+
+**Local Development (`.env.local` - gitignored):**
 ```
-VITE_API_URL=http://localhost:3001/api/content-ops
+VITE_API_BASE_URL=http://localhost:8080
 ```
+
+**Production:**
+- No `.env.local` file (or set `VITE_API_BASE_URL` to production API URL)
+- Defaults to `https://content-flow-ouru.onrender.com` if not set
 
 ### Backend (server/.env)
 ```
