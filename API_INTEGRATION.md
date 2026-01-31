@@ -283,17 +283,16 @@ curl -X POST http://localhost:3001/api/content-ops/seed-demo
 To avoid CORS issues when developing locally against the Render backend, the Vite dev server uses a proxy:
 
 - **Vite Proxy**: Configured in `vite.config.ts` to forward `/api/*` requests to `https://content-flow-ouru.onrender.com`
-- **Local API Base**: Set `VITE_API_BASE_URL=http://localhost:8080` in `.env.local` (gitignored)
-- **How it works**: Browser makes requests to `http://localhost:8080/api/content-ops/*`, Vite proxy forwards to Render backend
-- **Benefits**: No CORS errors, no backend changes needed, production builds unaffected
+- **Automatic Dev Mode**: In development mode (`npm run dev`), the API client automatically uses relative paths (`/api/content-ops/*`) which hit the Vite proxy
+- **How it works**: 
+  - Browser makes requests to `http://localhost:8080/api/content-ops/*` (same-origin, no CORS)
+  - Vite proxy intercepts `/api/*` and forwards to `https://content-flow-ouru.onrender.com`
+- **Benefits**: No CORS errors, no backend changes needed, production builds unaffected, no `.env.local` needed for dev
 
 **Setup for local dev:**
-1. Create `.env.local` in the project root:
-   ```
-   VITE_API_BASE_URL=http://localhost:8080
-   ```
-2. Restart Vite dev server after creating/updating `.env.local`
-3. All API calls will now go through the proxy automatically
+1. Just run `npm run dev` - no configuration needed!
+2. API calls automatically go through the Vite proxy (`/api/content-ops/*` → Render backend)
+3. No `.env.local` file required for local development
 
 ### Backend CORS (for direct API access)
 
@@ -310,14 +309,15 @@ CORS_ORIGINS=https://your-production-domain.com
 
 ### Frontend
 
-**Local Development (`.env.local` - gitignored):**
-```
-VITE_API_BASE_URL=http://localhost:8080
-```
+**Local Development:**
+- No configuration needed! The API client automatically uses relative paths (`/api/content-ops/*`) in dev mode
+- These relative paths are proxied by Vite to the Render backend
+- `VITE_API_BASE_URL` is **not needed** in dev mode
 
 **Production:**
-- No `.env.local` file (or set `VITE_API_BASE_URL` to production API URL)
-- Defaults to `https://content-flow-ouru.onrender.com` if not set
+- Set `VITE_API_BASE_URL` to your production API URL (e.g., `https://content-flow-ouru.onrender.com`)
+- If `VITE_API_BASE_URL` is not set, defaults to `https://content-flow-ouru.onrender.com`
+- In production builds, the API client uses the full URL (no proxy)
 
 ### Backend (server/.env)
 ```

@@ -1,5 +1,9 @@
 // API Client for Content Ops Backend
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com';
+// In dev mode, use relative path to hit Vite proxy (/api/* -> backend)
+// In prod, use VITE_API_BASE_URL or default to Render backend
+const API_BASE_URL = import.meta.env.DEV 
+  ? '' // Use relative path in dev to hit Vite proxy
+  : (import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com');
 const API_FULL_URL = `${API_BASE_URL}/api/content-ops`;
 const ENABLE_VARIANTS = import.meta.env.VITE_ENABLE_VARIANTS === "true";
 
