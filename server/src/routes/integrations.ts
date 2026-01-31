@@ -6,6 +6,17 @@ import { createHash, randomBytes } from 'crypto';
 
 const router = Router();
 
+/**
+ * Token data from OAuth token response
+ */
+type TokenData = Record<string, unknown> & {
+  access_token: string;
+  refresh_token?: string;
+  expires_in?: number;
+  token_type?: string;
+  scope?: string;
+};
+
 // In-memory store for OAuth state (v1 - TTL 10 minutes)
 interface OAuthState {
   state: string;
@@ -45,8 +56,8 @@ function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
  * Returns list of providers with connection status
  */
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
-  const providers = [
-    { provider: 'x', status: 'disconnected' as const },
+  const providers: Array<{ provider: string; status: 'connected' | 'disconnected' }> = [
+    { provider: 'x', status: 'disconnected' },
   ];
   
   // Check connection status for each provider
@@ -168,11 +179,11 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
       throw new Error(`Token exchange failed: ${tokenResponse.status} - ${errorText}`);
     }
     
-    const tokenData = await tokenResponse.json();
+    const tokenData = await tokenResponse.json() as TokenData;
     
     // Calculate expires_at if expires_in is provided
     const expiresAt = tokenData.expires_in
-      ? Date.now() + tokenData.expires_in * 1000
+      ? Date.now() + (typeof tokenData.expires_in === 'number' ? tokenData.expires_in : 0) * 1000
       : undefined;
     
     // Store encrypted token

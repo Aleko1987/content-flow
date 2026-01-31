@@ -1,6 +1,16 @@
 import type { PublishProvider, ProviderResult } from './types.js';
 
 /**
+ * X API v2 create tweet response shape
+ */
+interface XCreateTweetResponse {
+  data?: {
+    id: string;
+    text?: string;
+  };
+}
+
+/**
  * X (Twitter) provider implementation
  */
 export class XProvider implements PublishProvider {
@@ -41,7 +51,7 @@ export class XProvider implements PublishProvider {
       throw new Error(errorMessage);
     }
     
-    const data = await response.json();
+    const data = await response.json() as XCreateTweetResponse;
     
     // X API v2 returns { data: { id: "...", text: "..." } }
     if (!data.data || !data.data.id) {

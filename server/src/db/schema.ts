@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index, primaryKey, timestamptz } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index, primaryKey } from 'drizzle-orm/pg-core';
 
 // Channels table
 export const channels = pgTable('channels', {
@@ -88,7 +88,7 @@ export const publishTasks = pgTable('publish_tasks', {
   providerRef: text('provider_ref'),
   attempts: integer('attempts').notNull().default(0),
   maxAttempts: integer('max_attempts').notNull().default(5),
-  lockedAt: timestamptz('locked_at'),
+  lockedAt: timestamp('locked_at', { withTimezone: true, mode: 'string' }),
   lockedBy: text('locked_by'),
   lastError: text('last_error'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
@@ -159,8 +159,8 @@ export const connectedAccounts = pgTable('connected_accounts', {
   accountRef: text('account_ref'),
   tokenCiphertext: text('token_ciphertext').notNull(),
   tokenMeta: jsonb('token_meta').$type<Record<string, unknown>>(),
-  createdAt: timestamptz('created_at').notNull().defaultNow(),
-  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).notNull().defaultNow(),
 }, (table) => ({
   providerIdx: index('idx_connected_accounts_provider').on(table.provider),
   uniqueProvider: unique().on(table.provider),

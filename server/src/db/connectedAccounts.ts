@@ -5,13 +5,13 @@ import { encrypt, decrypt } from '../utils/crypto.js';
 
 export type ConnectedAccountStatus = 'connected' | 'revoked' | 'error';
 
-export interface TokenData {
+export type TokenData = Record<string, unknown> & {
   access_token: string;
   refresh_token?: string;
   expires_at?: number;
   token_type?: string;
   scope?: string;
-}
+};
 
 export interface TokenMeta {
   expires_at?: number;
