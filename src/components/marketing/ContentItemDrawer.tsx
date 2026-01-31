@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useContentOps } from '@/contexts/ContentOpsContext';
 import {
   Sheet,
@@ -60,11 +60,19 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   const channels = getChannels();
   const enabledChannels = channels.filter(c => c.enabled);
   
-  const [formData, setFormData] = useState({
+  // Store getContentItem in ref to avoid including it in effect dependencies
+  // This prevents the effect from re-running when context state updates
+  const getContentItemRef = useRef(getContentItem);
+  useEffect(() => {
+    getContentItemRef.current = getContentItem;
+  }, [getContentItem]);
+  
+  // Maintain local draft state that persists during editing
+  const [draft, setDraft] = useState<Partial<ContentItem>>({
     title: '',
     hook: '',
-    pillar: '' as ContentPillar | '',
-    format: '' as ContentFormat | '',
+    pillar: null,
+    format: null,
     status: 'draft' as ContentStatus,
     priority: 2 as Priority,
     notes: '',
@@ -72,43 +80,62 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   const [uploading, setUploading] = useState(false);
   const [attachedMedia, setAttachedMedia] = useState<Array<{ id: string; url: string; filename: string }>>([]);
   
+  // Initialize/reset draft only when dialog opens or itemId changes
+  // Use ref to get item to avoid depending on getContentItem function reference
   useEffect(() => {
-    if (item) {
-      setFormData({
-        title: item.title,
-        hook: item.hook || '',
-        pillar: item.pillar || '',
-        format: item.format || '',
-        status: item.status,
-        priority: item.priority,
-        notes: item.notes || '',
-      });
-      // Load attached media if mediaIds exist
-      if (item.mediaIds && item.mediaIds.length > 0) {
-        // For now, we'll just store the IDs. In a full implementation, you'd fetch media details
-        setAttachedMedia(item.mediaIds.map(id => ({ id, url: '', filename: '' })));
-      } else {
-        setAttachedMedia([]);
+    if (open && itemId) {
+      const currentItem = getContentItemRef.current(itemId);
+      if (currentItem) {
+        setDraft({
+          title: currentItem.title,
+          hook: currentItem.hook || '',
+          pillar: currentItem.pillar || null,
+          format: currentItem.format || null,
+          status: currentItem.status,
+          priority: currentItem.priority,
+          notes: currentItem.notes || '',
+        });
+        // Load attached media if mediaIds exist
+        if (currentItem.mediaIds && currentItem.mediaIds.length > 0) {
+          // For now, we'll just store the IDs. In a full implementation, you'd fetch media details
+          setAttachedMedia(currentItem.mediaIds.map(id => ({ id, url: '', filename: '' })));
+        } else {
+          setAttachedMedia([]);
+        }
       }
     }
-  }, [item]);
+  }, [open, itemId]); // Only reset when dialog opens/closes OR itemId changes, not on every item update
   
   const handleSave = async () => {
     if (!itemId) return;
     
     try {
       await updateContentItem(itemId, {
-        title: formData.title,
-        hook: formData.hook || null,
-        pillar: formData.pillar || null,
-        format: formData.format || null,
-        status: formData.status,
-        priority: formData.priority,
-        notes: formData.notes || null,
+        title: draft.title || '',
+        hook: draft.hook || null,
+        pillar: draft.pillar || null,
+        format: draft.format || null,
+        status: draft.status || 'draft',
+        priority: draft.priority || 2,
+        notes: draft.notes || null,
       });
     } catch (error) {
       // Error handled by context toast
+      throw error; // Re-throw so caller knows save failed
     }
+  };
+
+  const handleClose = async (open: boolean) => {
+    if (!open && itemId) {
+      // Save changes when drawer closes
+      try {
+        await handleSave();
+      } catch (error) {
+        // If save fails, keep drawer open so user doesn't lose edits
+        return;
+      }
+    }
+    onClose();
   };
   
   const handleAddVariant = async (channelKey: ChannelKey) => {
@@ -133,7 +160,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   
   const handleGenerateUtms = async (variantId: string) => {
     try {
-      await generateUtms(variantId, formData.title);
+      await generateUtms(variantId, draft.title || '');
     } catch (error) {
       // Error handled by context toast
     }
@@ -204,7 +231,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   const availableChannels = enabledChannels.filter(c => !existingVariantChannels.includes(c.key));
   
   return (
-    <Sheet open={open} onOpenChange={onClose}>
+    <Sheet open={open} onOpenChange={handleClose}>
       <SheetContent className="w-full sm:max-w-xl overflow-y-auto">
         <SheetHeader>
           <SheetTitle>Edit Content Item</SheetTitle>
@@ -217,8 +244,8 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <Label htmlFor="title">Title</Label>
               <Input
                 id="title"
-                value={formData.title}
-                onChange={(e) => setFormData(prev => ({ ...prev, title: e.target.value }))}
+                value={draft.title ?? ''}
+                onChange={(e) => setDraft(prev => ({ ...prev, title: e.target.value }))}
                 onBlur={handleSave}
                 className="bg-secondary/50"
               />
@@ -228,8 +255,8 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <Label htmlFor="hook">Hook</Label>
               <Input
                 id="hook"
-                value={formData.hook}
-                onChange={(e) => setFormData(prev => ({ ...prev, hook: e.target.value }))}
+                value={draft.hook ?? ''}
+                onChange={(e) => setDraft(prev => ({ ...prev, hook: e.target.value }))}
                 onBlur={handleSave}
                 placeholder="Attention-grabbing hook..."
                 className="bg-secondary/50"
@@ -240,10 +267,9 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <div className="space-y-2">
                 <Label>Pillar</Label>
                 <Select
-                  value={formData.pillar}
+                  value={draft.pillar ?? ''}
                   onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, pillar: value as ContentPillar }));
-                    if (itemId) updateContentItem(itemId, { pillar: value as ContentPillar || null }).catch(() => {});
+                    setDraft(prev => ({ ...prev, pillar: value as ContentPillar }));
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -262,10 +288,9 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <div className="space-y-2">
                 <Label>Format</Label>
                 <Select
-                  value={formData.format}
+                  value={draft.format ?? ''}
                   onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, format: value as ContentFormat }));
-                    if (itemId) updateContentItem(itemId, { format: value as ContentFormat || null }).catch(() => {});
+                    setDraft(prev => ({ ...prev, format: value as ContentFormat }));
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -287,10 +312,9 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <div className="space-y-2">
                 <Label>Status</Label>
                 <Select
-                  value={formData.status}
+                  value={draft.status ?? 'draft'}
                   onValueChange={(value) => {
-                    setFormData(prev => ({ ...prev, status: value as ContentStatus }));
-                    if (itemId) updateContentItem(itemId, { status: value as ContentStatus }).catch(() => {});
+                    setDraft(prev => ({ ...prev, status: value as ContentStatus }));
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -310,11 +334,10 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <div className="space-y-2">
                 <Label>Priority</Label>
                 <Select
-                  value={formData.priority.toString()}
+                  value={(draft.priority ?? 2).toString()}
                   onValueChange={(value) => {
                     const priority = parseInt(value) as Priority;
-                    setFormData(prev => ({ ...prev, priority }));
-                    if (itemId) updateContentItem(itemId, { priority }).catch(() => {});
+                    setDraft(prev => ({ ...prev, priority }));
                   }}
                 >
                   <SelectTrigger className="bg-secondary/50">
@@ -333,8 +356,8 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
               <Label htmlFor="notes">Notes</Label>
               <Textarea
                 id="notes"
-                value={formData.notes}
-                onChange={(e) => setFormData(prev => ({ ...prev, notes: e.target.value }))}
+                value={draft.notes ?? ''}
+                onChange={(e) => setDraft(prev => ({ ...prev, notes: e.target.value }))}
                 onBlur={handleSave}
                 placeholder="Additional notes..."
                 className="bg-secondary/50"
