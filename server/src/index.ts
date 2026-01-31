@@ -13,6 +13,7 @@ import mediaAssetsRouter from './routes/media-assets.js';
 import mediaRouter from './routes/media.js';
 import seedRouter from './routes/seed.js';
 import scheduledPostsRouter from './routes/scheduled-posts.js';
+import integrationsRouter from './routes/integrations.js';
 
 // Load environment variables
 dotenv.config();
@@ -78,6 +79,9 @@ app.use('/api/content-ops', seedRouter);
 
 // Scheduled Posts API (Calendar feature)
 app.use('/api/content-ops/scheduled-posts', scheduledPostsRouter);
+
+// Integrations API (OAuth connections)
+app.use('/api/content-ops/integrations', integrationsRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);

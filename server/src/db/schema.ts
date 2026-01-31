@@ -1,4 +1,4 @@
-import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index, primaryKey } from 'drizzle-orm/pg-core';
+import { pgTable, text, timestamp, jsonb, boolean, integer, varchar, unique, index, primaryKey, timestamptz } from 'drizzle-orm/pg-core';
 
 // Channels table
 export const channels = pgTable('channels', {
@@ -81,12 +81,21 @@ export const publishTasks = pgTable('publish_tasks', {
   channelKey: varchar('channel_key', { length: 50 }).notNull(),
   scheduledFor: timestamp('scheduled_for'),
   state: varchar('state', { length: 50 }).notNull().default('todo'),
+  status: varchar('status', { length: 50 }), // queued|running|success|failed|retryable_failed
   assignee: text('assignee'),
   checklist: jsonb('checklist').$type<string[]>().notNull().default([]),
+  idempotencyKey: text('idempotency_key'),
+  providerRef: text('provider_ref'),
+  attempts: integer('attempts').notNull().default(0),
+  maxAttempts: integer('max_attempts').notNull().default(5),
+  lockedAt: timestamptz('locked_at'),
+  lockedBy: text('locked_by'),
+  lastError: text('last_error'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
   updatedAt: timestamp('updated_at').notNull().defaultNow(),
 }, (table) => ({
   uniqueContentChannel: unique().on(table.contentItemId, table.channelKey),
+  idempotencyKeyIdx: index('idx_publish_tasks_idempotency_key').on(table.idempotencyKey),
 }));
 
 // Publish logs table
@@ -140,4 +149,20 @@ export const scheduledPostMedia = pgTable('scheduled_post_media', {
   storageUrl: text('storage_url'), // null for now, frontend uses object URLs
   createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
 });
+
+// Connected accounts table (OAuth tokens)
+export const connectedAccounts = pgTable('connected_accounts', {
+  id: text('id').primaryKey(),
+  provider: varchar('provider', { length: 50 }).notNull(),
+  label: text('label'),
+  status: varchar('status', { length: 50 }).notNull().default('connected'), // connected|revoked|error
+  accountRef: text('account_ref'),
+  tokenCiphertext: text('token_ciphertext').notNull(),
+  tokenMeta: jsonb('token_meta').$type<Record<string, unknown>>(),
+  createdAt: timestamptz('created_at').notNull().defaultNow(),
+  updatedAt: timestamptz('updated_at').notNull().defaultNow(),
+}, (table) => ({
+  providerIdx: index('idx_connected_accounts_provider').on(table.provider),
+  uniqueProvider: unique().on(table.provider),
+}));
 
