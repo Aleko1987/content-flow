@@ -431,7 +431,7 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
 
     // If locked_at within 2 minutes, return 409
     if (task.lockedAt) {
-      const lockAge = Date.now() - task.lockedAt.getTime();
+      const lockAge = Date.now() - new Date(task.lockedAt).getTime();
       const twoMinutes = 2 * 60 * 1000;
       if (lockAge < twoMinutes) {
         const error: Error & { status?: number } = new Error('Task is currently locked');
@@ -447,7 +447,7 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
       .set({
         status: 'running',
         attempts: (task.attempts || 0) + 1,
-        lockedAt: now,
+        lockedAt: sql`now()`,
         lockedBy: instanceId,
         lastError: null,
         updatedAt: now,

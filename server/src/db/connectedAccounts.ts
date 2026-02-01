@@ -1,7 +1,16 @@
 import { db } from './index.js';
 import { connectedAccounts } from './schema.js';
-import { eq } from 'drizzle-orm';
+import { eq, sql } from 'drizzle-orm';
 import { encrypt, decrypt } from '../utils/crypto.js';
+
+// Generate UUID
+const generateId = (): string => {
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+};
 
 export type ConnectedAccountStatus = 'connected' | 'revoked' | 'error';
 
@@ -64,17 +73,6 @@ export async function upsertConnectedAccount(
   // Encrypt token
   const tokenCiphertext = encrypt(JSON.stringify(tokenData));
   
-  // Generate ID if needed
-  const generateId = (): string => {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-  };
-  
-  const now = new Date();
-  
   // Check if account exists
   const existing = await db
     .select()
@@ -92,7 +90,7 @@ export async function upsertConnectedAccount(
         label: label ?? existing[0].label,
         status,
         accountRef: accountRef ?? existing[0].accountRef,
-        updatedAt: now,
+        updatedAt: sql`now()`,
       })
       .where(eq(connectedAccounts.provider, provider))
       .returning();
@@ -110,8 +108,8 @@ export async function upsertConnectedAccount(
         label,
         status,
         accountRef,
-        createdAt: now,
-        updatedAt: now,
+        createdAt: sql`now()`,
+        updatedAt: sql`now()`,
       })
       .returning();
     
