@@ -84,6 +84,17 @@ export const CalendarPage: React.FC = () => {
     setDrawerOpen(true);
   };
 
+  const handlePostDelete = async (post: ScheduledPost) => {
+    try {
+      await scheduledPostApiService.remove(post.id);
+      await loadPosts();
+      toast({ title: 'Deleted', description: 'Post removed' });
+    } catch (error) {
+      console.error('Delete failed:', error);
+      toast({ title: 'Error', description: 'Failed to delete', variant: 'destructive' });
+    }
+  };
+
   const handleDragStart = (e: React.DragEvent, postId: string) => {
     setDraggedPostId(postId);
     e.dataTransfer.effectAllowed = 'move';
@@ -174,6 +185,7 @@ export const CalendarPage: React.FC = () => {
                     key={post.id}
                     post={post}
                     onClick={() => { handlePostClick(post); }}
+                    onDelete={() => { handlePostDelete(post); }}
                     onDragStart={(e) => handleDragStart(e, post.id)}
                   />
                 ))}

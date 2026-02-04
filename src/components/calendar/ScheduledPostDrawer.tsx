@@ -10,6 +10,17 @@ import { MediaDropzone } from './MediaDropzone';
 import { scheduledPostApiService } from '@/services/scheduledPostApiService';
 import type { ScheduledPost, Platform, MediaItem } from '@/types/scheduled-post';
 import { Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface ScheduledPostDrawerProps {
   open: boolean;
@@ -94,7 +105,30 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
         <SheetHeader>
-          <SheetTitle>{post ? 'Edit Scheduled Post' : 'New Scheduled Post'}</SheetTitle>
+          <div className="flex items-center justify-between gap-2">
+            <SheetTitle>{post ? 'Edit Scheduled Post' : 'New Scheduled Post'}</SheetTitle>
+            {post && (
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button variant="destructive" size="sm">
+                    <Trash2 className="h-4 w-4 mr-1" /> Delete
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Delete appointment?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      This will permanently remove the scheduled post.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                    <AlertDialogAction onClick={handleDelete}>Delete</AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            )}
+          </div>
         </SheetHeader>
 
         <div className="space-y-4 py-4">
@@ -126,11 +160,6 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
         </div>
 
         <SheetFooter className="flex gap-2">
-          {post && (
-            <Button variant="destructive" onClick={handleDelete} className="mr-auto">
-              <Trash2 className="h-4 w-4 mr-1" /> Delete
-            </Button>
-          )}
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
         </SheetFooter>

@@ -1,11 +1,23 @@
 import React from 'react';
 import { Badge } from '@/components/ui/badge';
 import { PLATFORMS, type ScheduledPost } from '@/types/scheduled-post';
-import { Image, Film } from 'lucide-react';
+import { Image, Film, Trash2 } from 'lucide-react';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
 
 interface ScheduledPostCardProps {
   post: ScheduledPost;
   onClick: () => void;
+  onDelete?: () => void;
   draggable?: boolean;
   onDragStart?: (e: React.DragEvent) => void;
 }
@@ -13,6 +25,7 @@ interface ScheduledPostCardProps {
 export const ScheduledPostCard: React.FC<ScheduledPostCardProps> = ({
   post,
   onClick,
+  onDelete,
   draggable = true,
   onDragStart,
 }) => {
@@ -27,13 +40,44 @@ export const ScheduledPostCard: React.FC<ScheduledPostCardProps> = ({
       onDragStart={onDragStart}
       className="p-1.5 bg-card border border-border rounded text-xs cursor-pointer hover:border-primary transition-colors group"
     >
-      <div className="flex items-center gap-1 mb-1">
-        <span className="font-medium text-foreground">{post.scheduledTime}</span>
-        {hasMedia && (
-          <span className="text-muted-foreground">
-            {hasImage && <Image className="h-3 w-3 inline" />}
-            {hasVideo && <Film className="h-3 w-3 inline ml-0.5" />}
-          </span>
+      <div className="flex items-center justify-between gap-1 mb-1">
+        <div className="flex items-center gap-1">
+          <span className="font-medium text-foreground">{post.scheduledTime}</span>
+          {hasMedia && (
+            <span className="text-muted-foreground">
+              {hasImage && <Image className="h-3 w-3 inline" />}
+              {hasVideo && <Film className="h-3 w-3 inline ml-0.5" />}
+            </span>
+          )}
+        </div>
+        {onDelete && (
+          <AlertDialog>
+            <AlertDialogTrigger asChild>
+              <button
+                type="button"
+                className="text-muted-foreground hover:text-destructive transition-colors"
+                onMouseDown={(e) => { e.stopPropagation(); }}
+                onClick={(e) => { e.stopPropagation(); }}
+                draggable={false}
+                aria-label="Delete scheduled post"
+                title="Delete"
+              >
+                <Trash2 className="h-3 w-3" />
+              </button>
+            </AlertDialogTrigger>
+            <AlertDialogContent onClick={(e) => { e.stopPropagation(); }}>
+              <AlertDialogHeader>
+                <AlertDialogTitle>Delete appointment?</AlertDialogTitle>
+                <AlertDialogDescription>
+                  This will permanently remove the scheduled post.
+                </AlertDialogDescription>
+              </AlertDialogHeader>
+              <AlertDialogFooter>
+                <AlertDialogCancel>Cancel</AlertDialogCancel>
+                <AlertDialogAction onClick={onDelete}>Delete</AlertDialogAction>
+              </AlertDialogFooter>
+            </AlertDialogContent>
+          </AlertDialog>
         )}
       </div>
       {post.platforms.length > 0 && (
