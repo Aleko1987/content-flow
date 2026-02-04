@@ -80,15 +80,15 @@ export const publishTasks = pgTable('publish_tasks', {
   contentItemId: text('content_item_id').notNull().references(() => contentItems.id, { onDelete: 'cascade' }),
   channelKey: varchar('channel_key', { length: 50 }).notNull(),
   scheduledFor: timestamp('scheduled_for'),
-  state: varchar('state', { length: 50 }).notNull().default('todo'),
-  status: varchar('status', { length: 50 }), // queued|running|success|failed|retryable_failed
+  state: text('state').notNull().default('pending'),
+  status: text('status').notNull().default('pending'), // queued|running|success|failed|retryable_failed
   assignee: text('assignee'),
   checklist: jsonb('checklist').$type<string[]>().notNull().default([]),
   idempotencyKey: text('idempotency_key'),
   providerRef: text('provider_ref'),
   attempts: integer('attempts').notNull().default(0),
   maxAttempts: integer('max_attempts').notNull().default(5),
-  lockedAt: timestamp('locked_at', { withTimezone: true, mode: 'string' }),
+  lockedAt: timestamp('locked_at', { withTimezone: true, mode: 'date' }),
   lockedBy: text('locked_by'),
   lastError: text('last_error'),
   createdAt: timestamp('created_at').notNull().defaultNow(),
