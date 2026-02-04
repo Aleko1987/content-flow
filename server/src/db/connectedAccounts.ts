@@ -3,6 +3,36 @@ import { connectedAccounts } from './schema.js';
 import { eq, sql } from 'drizzle-orm';
 import { encrypt, decrypt } from '../utils/crypto.js';
 
+let ensureConnectedAccountsPromise: Promise<void> | null = null;
+
+async function ensureConnectedAccountsTable() {
+  if (!ensureConnectedAccountsPromise) {
+    ensureConnectedAccountsPromise = (async () => {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS connected_accounts (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          provider TEXT NOT NULL,
+          label TEXT,
+          status TEXT NOT NULL DEFAULT 'connected',
+          account_ref TEXT,
+          token_ciphertext TEXT NOT NULL,
+          token_meta JSONB,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_connected_accounts_provider
+        ON connected_accounts (provider)
+      `);
+    })().catch((error) => {
+      ensureConnectedAccountsPromise = null;
+      throw error;
+    });
+  }
+  await ensureConnectedAccountsPromise;
+}
+
 // Generate UUID
 const generateId = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -32,6 +62,7 @@ export interface TokenMeta {
  * Get connected account for a provider
  */
 export async function getConnectedAccount(provider: string) {
+  await ensureConnectedAccountsTable();
   const accounts = await db
     .select()
     .from(connectedAccounts)
@@ -70,6 +101,7 @@ export async function upsertConnectedAccount(
   status: ConnectedAccountStatus = 'connected',
   accountRef: string | null = null
 ) {
+  await ensureConnectedAccountsTable();
   // Encrypt token
   const tokenCiphertext = encrypt(JSON.stringify(tokenData));
   
