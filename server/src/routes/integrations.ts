@@ -83,6 +83,7 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
   const clientId = process.env.X_CLIENT_ID;
   const redirectUri = process.env.X_REDIRECT_URI;
   
+  // Validate required environment variables
   if (!clientId || !redirectUri) {
     const missing = [];
     if (!clientId) missing.push('X_CLIENT_ID');
@@ -91,6 +92,19 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
       error: 'Missing required environment variables',
       missing: missing
     });
+  }
+  
+  // Ensure client_id is exactly from env, nothing appended
+  // Use clientId directly without any modification
+  const cleanClientId = clientId.trim();
+  
+  // Debug log: non-secret info only
+  try {
+    const redirectUrl = new URL(redirectUri);
+    const redirectHostPath = `${redirectUrl.host}${redirectUrl.pathname}`;
+    console.log(`[X OAuth] connect/start - redirect_uri: ${redirectHostPath}, client_id length: ${cleanClientId.length}`);
+  } catch (error) {
+    console.log(`[X OAuth] connect/start - redirect_uri parse error, client_id length: ${cleanClientId.length}`);
   }
   
   // Generate state and PKCE
@@ -104,11 +118,11 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
     expiresAt: Date.now() + 10 * 60 * 1000,
   });
   
-  // Build authorization URL
+  // Build authorization URL - use client_id exactly as from env
   const scopes = ['tweet.read', 'tweet.write', 'users.read', 'offline.access'];
   const params = new URLSearchParams({
     response_type: 'code',
-    client_id: clientId,
+    client_id: cleanClientId,
     redirect_uri: redirectUri,
     scope: scopes.join(' '),
     state,
@@ -128,21 +142,39 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
 router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Response) => {
   const { state, code, error } = req.query;
   
+  // Helper to get app base URL without trailing slash
+  const getAppBaseUrl = () => {
+    const url = process.env.APP_BASE_URL || 'http://localhost:8080';
+    return url.replace(/\/+$/, ''); // Remove trailing slashes
+  };
+  
+  // Redirect to settings tab (which exists) instead of /integrations (which doesn't)
+  const buildRedirectUrl = (success: boolean, errorMsg?: string) => {
+    const base = getAppBaseUrl();
+    const params = new URLSearchParams({
+      provider: 'x',
+      success: success ? '1' : '0',
+    });
+    if (errorMsg) {
+      params.set('error', errorMsg);
+    }
+    // Redirect to /?tab=settings which exists, with query params for the integration result
+    return `${base}/?tab=settings&${params.toString()}`;
+  };
+  
   if (error) {
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:8080';
-    return res.redirect(`${appBaseUrl}/integrations?provider=x&success=0&error=${encodeURIComponent(error as string)}`);
+    return res.redirect(buildRedirectUrl(false, error as string));
   }
   
   if (!state || !code) {
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:8080';
-    return res.redirect(`${appBaseUrl}/integrations?provider=x&success=0&error=missing_params`);
+    return res.redirect(buildRedirectUrl(false, 'missing_params'));
   }
   
   // Validate state
   const stateData = oauthStates.get(state as string);
   if (!stateData || stateData.expiresAt < Date.now()) {
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:8080';
-    return res.redirect(`${appBaseUrl}/integrations?provider=x&success=0&error=invalid_state`);
+    console.log(`[X OAuth] callback - invalid_state, state exists: ${oauthStates.has(state as string)}, expired: ${stateData ? stateData.expiresAt < Date.now() : 'N/A'}`);
+    return res.redirect(buildRedirectUrl(false, 'invalid_state'));
   }
   
   // Remove state from memory
@@ -154,21 +186,25 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
   const redirectUri = process.env.X_REDIRECT_URI;
   
   if (!clientId || !clientSecret || !redirectUri) {
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:8080';
-    return res.redirect(`${appBaseUrl}/integrations?provider=x&success=0&error=config_missing`);
+    return res.redirect(buildRedirectUrl(false, 'config_missing'));
   }
+  
+  // Ensure client_id is exactly from env, nothing appended
+  const cleanClientId = clientId.trim();
+  
+  console.log(`[X OAuth] callback - exchanging code for tokens, client_id length: ${cleanClientId.length}`);
   
   try {
     const tokenResponse = await fetch('https://api.twitter.com/2/oauth2/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded',
-        'Authorization': `Basic ${Buffer.from(`${clientId}:${clientSecret}`).toString('base64')}`,
+        'Authorization': `Basic ${Buffer.from(`${cleanClientId}:${clientSecret}`).toString('base64')}`,
       },
       body: new URLSearchParams({
         code: code as string,
         grant_type: 'authorization_code',
-        client_id: clientId,
+        client_id: cleanClientId,
         redirect_uri: redirectUri,
         code_verifier: stateData.codeVerifier,
       }),
@@ -176,10 +212,13 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
     
     if (!tokenResponse.ok) {
       const errorText = await tokenResponse.text();
+      console.log(`[X OAuth] callback - token exchange failed: ${tokenResponse.status} - ${errorText}`);
       throw new Error(`Token exchange failed: ${tokenResponse.status} - ${errorText}`);
     }
     
     const tokenData = await tokenResponse.json() as TokenData;
+    
+    console.log(`[X OAuth] callback - token exchange successful, has refresh_token: ${!!tokenData.refresh_token}`);
     
     // Calculate expires_at if expires_in is provided
     const expiresAt = tokenData.expires_in
@@ -206,12 +245,13 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
       null // account_ref (can be fetched later)
     );
     
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:8080';
-    res.redirect(`${appBaseUrl}/integrations?provider=x&success=1`);
+    console.log(`[X OAuth] callback - account stored successfully`);
+    
+    res.redirect(buildRedirectUrl(true));
   } catch (error) {
-    const appBaseUrl = process.env.APP_BASE_URL || 'http://localhost:8080';
     const errorMsg = error instanceof Error ? error.message : 'unknown_error';
-    res.redirect(`${appBaseUrl}/integrations?provider=x&success=0&error=${encodeURIComponent(errorMsg)}`);
+    console.log(`[X OAuth] callback - error: ${errorMsg}`);
+    res.redirect(buildRedirectUrl(false, errorMsg));
   }
 }));
 
