@@ -136,6 +136,34 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
 }));
 
 /**
+ * GET /api/content-ops/integrations/x/debug
+ * Returns non-secret config info for troubleshooting OAuth setup
+ */
+router.get('/x/debug', asyncHandler(async (req: Request, res: Response) => {
+  const clientId = process.env.X_CLIENT_ID || '';
+  const redirectUri = process.env.X_REDIRECT_URI || '';
+  const appBaseUrl = (process.env.APP_BASE_URL || 'http://localhost:8080').replace(/\/+$/, '');
+
+  let redirectHostPath: string | null = null;
+  try {
+    const redirectUrl = new URL(redirectUri);
+    redirectHostPath = `${redirectUrl.host}${redirectUrl.pathname}`;
+  } catch {
+    redirectHostPath = null;
+  }
+
+  res.json({
+    ok: true,
+    app_base_url: appBaseUrl,
+    client_id_length: clientId.length,
+    client_id_prefix: clientId ? clientId.slice(0, 6) : null,
+    redirect_uri: redirectUri,
+    redirect_host_path: redirectHostPath,
+    scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+  });
+}));
+
+/**
  * GET /api/content-ops/integrations/x/connect/callback
  * Handles OAuth callback from X
  */
