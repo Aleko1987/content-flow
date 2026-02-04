@@ -128,7 +128,25 @@ export interface ApiLogPublishResponse {
   task: ApiPublishTask;
 }
 
+export interface ApiIntegrationProvider {
+  provider: string;
+  status: 'connected' | 'disconnected';
+}
+
+export interface ApiIntegrationsResponse {
+  providers: ApiIntegrationProvider[];
+}
+
 export const apiClient = {
+  // Integrations
+  integrations: {
+    getAll: (): Promise<ApiIntegrationsResponse> =>
+      fetch(`${API_FULL_URL}/integrations`).then(r => handleResponse<ApiIntegrationsResponse>(r)),
+    connectStart: (provider: string): Promise<{ url: string }> =>
+      fetch(`${API_FULL_URL}/integrations/${provider}/connect/start`, {
+        method: 'POST',
+      }).then(r => handleResponse<{ url: string }>(r)),
+  },
   // Channels
   channels: {
     getAll: (): Promise<ApiChannel[]> => 

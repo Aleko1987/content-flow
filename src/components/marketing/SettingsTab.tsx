@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import { useContentOps } from '@/contexts/ContentOpsContext';
 import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
@@ -8,6 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Plus, X, Save } from 'lucide-react';
 import type { ChannelKey, Channel } from '@/types/content-ops';
+import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
 
 const channelIcons: Record<ChannelKey, string> = {
   x: '𝕏',
@@ -21,10 +23,88 @@ const channelIcons: Record<ChannelKey, string> = {
 
 export const SettingsTab: React.FC = () => {
   const { getChannels, updateChannel } = useContentOps();
+  const { toast } = useToast();
   const channels = getChannels();
   
   const [editingChecklist, setEditingChecklist] = useState<string | null>(null);
   const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [integrations, setIntegrations] = useState<Array<{ provider: string; status: 'connected' | 'disconnected' }>>([]);
+  const [integrationsLoading, setIntegrationsLoading] = useState(false);
+  const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+
+  const refreshIntegrations = useCallback(async () => {
+    setIntegrationsLoading(true);
+    try {
+      const data = await apiClient.integrations.getAll();
+      setIntegrations(data.providers || []);
+    } catch (error) {
+      toast({
+        title: 'Error',
+        description: error instanceof Error ? error.message : 'Failed to load integrations',
+        variant: 'destructive',
+      });
+    } finally {
+      setIntegrationsLoading(false);
+    }
+  }, [toast]);
+
+  useEffect(() => {
+    refreshIntegrations();
+  }, [refreshIntegrations]);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const provider = params.get('provider');
+    const success = params.get('success');
+    const error = params.get('error');
+
+    if (provider === 'x' && success) {
+      if (success === '1') {
+        toast({
+          title: 'X connected',
+          description: 'Your X account is now connected.',
+        });
+        refreshIntegrations();
+      } else {
+        toast({
+          title: 'X connection failed',
+          description: error || 'Authorization failed.',
+          variant: 'destructive',
+        });
+      }
+
+      params.delete('provider');
+      params.delete('success');
+      params.delete('error');
+      const query = params.toString();
+      const nextUrl = `${window.location.pathname}${query ? `?${query}` : ''}`;
+      window.history.replaceState({}, '', nextUrl);
+    }
+  }, [refreshIntegrations, toast]);
+
+  const getIntegrationStatus = (provider: string) => {
+    return integrations.find(item => item.provider === provider)?.status ?? 'disconnected';
+  };
+
+  const handleConnect = useCallback(async (provider: string) => {
+    setConnectingProvider(provider);
+    try {
+      const result = await apiClient.integrations.connectStart(provider);
+      if (result.url) {
+        window.open(result.url, '_blank', 'noopener');
+      } else {
+        throw new Error('Missing authorization URL');
+      }
+    } catch (error) {
+      toast({
+        title: 'Connection error',
+        description: error instanceof Error ? error.message : 'Failed to start OAuth flow',
+        variant: 'destructive',
+      });
+    } finally {
+      setConnectingProvider(null);
+    }
+  }, [toast]);
   
   const handleToggleChannel = async (id: string, enabled: boolean) => {
     try {
@@ -59,6 +139,41 @@ export const SettingsTab: React.FC = () => {
   
   return (
     <div className="max-w-3xl space-y-6">
+      <div>
+        <h2 className="text-lg font-semibold text-foreground">Integrations</h2>
+        <p className="text-sm text-muted-foreground">
+          Connect external accounts for publishing
+        </p>
+      </div>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">𝕏</span>
+              <div>
+                <CardTitle className="text-base">X (Twitter)</CardTitle>
+                <CardDescription className="text-xs">
+                  Status: {integrationsLoading ? 'Loading…' : getIntegrationStatus('x')}
+                </CardDescription>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              disabled={integrationsLoading || connectingProvider === 'x'}
+              onClick={() => handleConnect('x')}
+            >
+              {getIntegrationStatus('x') === 'connected' ? 'Reconnect' : 'Connect'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Connect your X account to enable publishing.
+          </p>
+        </CardContent>
+      </Card>
+
       <div>
         <h2 className="text-lg font-semibold text-foreground">Channel Settings</h2>
         <p className="text-sm text-muted-foreground">
