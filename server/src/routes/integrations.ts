@@ -119,7 +119,7 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
   });
   
   // Build authorization URL - use client_id exactly as from env
-  const scopes = ['tweet.read', 'tweet.write', 'users.read', 'offline.access'];
+  const scopes = ['tweet.read', 'users.read'];
   const params = new URLSearchParams({
     response_type: 'code',
     client_id: cleanClientId,
