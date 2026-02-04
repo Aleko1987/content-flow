@@ -162,7 +162,6 @@ router.get('/x/debug', asyncHandler(async (req: Request, res: Response) => {
       WHERE table_schema = 'public' AND table_name = 'connected_accounts'
       ORDER BY ordinal_position
     `);
-    // @ts-expect-error drizzle execute returns rows
     connectedAccountsColumns = (result.rows || []).map((row: any) => row.column_name);
   } catch (error) {
     connectedAccountsError = error instanceof Error ? error.message : 'unknown_error';
