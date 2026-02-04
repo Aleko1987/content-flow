@@ -143,6 +143,8 @@ router.get('/x/debug', asyncHandler(async (req: Request, res: Response) => {
   const clientId = process.env.X_CLIENT_ID || '';
   const redirectUri = process.env.X_REDIRECT_URI || '';
   const appBaseUrl = (process.env.APP_BASE_URL || 'http://localhost:8080').replace(/\/+$/, '');
+  let connectedAccountsColumns: string[] | null = null;
+  let connectedAccountsError: string | null = null;
 
   let redirectHostPath: string | null = null;
   try {
@@ -150,6 +152,20 @@ router.get('/x/debug', asyncHandler(async (req: Request, res: Response) => {
     redirectHostPath = `${redirectUrl.host}${redirectUrl.pathname}`;
   } catch {
     redirectHostPath = null;
+  }
+
+  try {
+    const { db } = await import('../db/index.js');
+    const result = await db.execute(`
+      SELECT column_name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'connected_accounts'
+      ORDER BY ordinal_position
+    `);
+    // @ts-expect-error drizzle execute returns rows
+    connectedAccountsColumns = (result.rows || []).map((row: any) => row.column_name);
+  } catch (error) {
+    connectedAccountsError = error instanceof Error ? error.message : 'unknown_error';
   }
 
   res.json({
@@ -160,6 +176,8 @@ router.get('/x/debug', asyncHandler(async (req: Request, res: Response) => {
     redirect_uri: redirectUri,
     redirect_host_path: redirectHostPath,
     scopes: ['tweet.read', 'tweet.write', 'users.read', 'offline.access'],
+    connected_accounts_columns: connectedAccountsColumns,
+    connected_accounts_error: connectedAccountsError,
   });
 }));
 
