@@ -14,6 +14,7 @@ import mediaRouter from './routes/media.js';
 import seedRouter from './routes/seed.js';
 import scheduledPostsRouter from './routes/scheduled-posts.js';
 import integrationsRouter from './routes/integrations.js';
+import { startScheduledPostRunner } from './scheduled-posts/runner.js';
 
 // Load environment variables
 dotenv.config();
@@ -90,6 +91,7 @@ app.use(errorHandler);
 app.listen(PORT, '0.0.0.0', () => {
   logger.info(`Server running on port ${PORT}`);
   logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
+  startScheduledPostRunner();
 });
 
 
