@@ -1,5 +1,7 @@
 // API Client for Content Ops Backend
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com';
+import { getApiBaseUrl } from './api-base-url';
+
+const API_BASE_URL = getApiBaseUrl();
 const API_FULL_URL = `${API_BASE_URL}/api/content-ops`;
 const ENABLE_VARIANTS = import.meta.env.VITE_ENABLE_VARIANTS === "true";
 

@@ -1,7 +1,8 @@
 // Scheduled Post API Service - Backend-backed persistence
 import type { ScheduledPost, ScheduledPostInput, MediaItem, Platform } from '@/types/scheduled-post';
+import { getApiBaseUrl } from '@/lib/api-base-url';
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://content-flow-ouru.onrender.com';
+const API_BASE_URL = getApiBaseUrl();
 const API_FULL_URL = `${API_BASE_URL}/api/content-ops`;
 
 // Helper to convert frontend MediaItem to API format
