@@ -1,6 +1,13 @@
+const normalizeBaseUrl = (raw: string): string => {
+  const trimmed = raw.trim();
+  if (!trimmed) return trimmed;
+  const withoutApi = trimmed.replace(/\/api\/content-ops\/?$/i, '');
+  return withoutApi.replace(/\/$/, '');
+};
+
 const getEnvApiBaseUrl = (): string | undefined => {
   const envBaseUrl = import.meta.env.VITE_API_BASE_URL || import.meta.env.VITE_API_URL;
-  return envBaseUrl ? String(envBaseUrl).trim() || undefined : undefined;
+  return envBaseUrl ? normalizeBaseUrl(String(envBaseUrl)) || undefined : undefined;
 };
 
 export const getApiBaseUrl = (): string => {
