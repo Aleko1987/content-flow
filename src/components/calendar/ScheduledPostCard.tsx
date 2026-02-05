@@ -35,7 +35,10 @@ export const ScheduledPostCard: React.FC<ScheduledPostCardProps> = ({
 
   return (
     <div
-      onClick={onClick}
+      onClick={(e) => {
+        e.stopPropagation();
+        onClick();
+      }}
       draggable={draggable}
       onDragStart={onDragStart}
       className="p-1.5 bg-card border border-border rounded text-xs cursor-pointer hover:border-primary transition-colors group"
