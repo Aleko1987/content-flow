@@ -10,7 +10,10 @@ export const getApiBaseUrl = (): string => {
   }
 
   if (typeof window !== 'undefined' && window.location?.origin) {
-    return window.location.origin;
+    const hostname = window.location.hostname;
+    if (hostname === 'localhost' || hostname === '127.0.0.1') {
+      return window.location.origin;
+    }
   }
 
   // Fallback for non-browser contexts

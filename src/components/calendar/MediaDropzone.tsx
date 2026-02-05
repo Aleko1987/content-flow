@@ -32,12 +32,12 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
   useEffect(() => {
     return () => {
       value.forEach(item => {
-        if (item.localObjectUrl.startsWith('blob:')) {
+        if (item.localObjectUrl?.startsWith('blob:')) {
           URL.revokeObjectURL(item.localObjectUrl);
         }
       });
     };
-  }, []);
+  }, [value]);
 
   const validateFile = (file: File): string | null => {
     const isImage = FILE_LIMITS.ALLOWED_IMAGE_TYPES.includes(file.type);
@@ -123,7 +123,7 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
 
   const removeMedia = useCallback((id: string) => {
     const item = value.find(m => m.id === id);
-    if (item && item.localObjectUrl.startsWith('blob:')) {
+    if (item?.localObjectUrl?.startsWith('blob:')) {
       URL.revokeObjectURL(item.localObjectUrl);
     }
     onChange(value.filter(m => m.id !== id));
@@ -169,14 +169,16 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
       {/* Media Preview Grid */}
       {value.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
-          {value.map(item => (
+          {value.map(item => {
+            const previewUrl = item.localObjectUrl || item.storageUrl || '';
+            return (
             <div
               key={item.id}
               className="relative aspect-square bg-secondary rounded-lg overflow-hidden group"
             >
               {item.type === 'image' ? (
                 <img
-                  src={item.localObjectUrl}
+                  src={previewUrl}
                   alt={item.fileName}
                   className="w-full h-full object-cover"
                 />
@@ -212,7 +214,8 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
                 {(item.size / 1024 / 1024).toFixed(1)}MB
               </div>
             </div>
-          ))}
+            );
+          })}
         </div>
       )}
     </div>

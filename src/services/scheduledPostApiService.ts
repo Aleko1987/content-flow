@@ -16,8 +16,22 @@ const mediaToApi = (media: MediaItem[]) =>
     storageUrl: m.storageUrl || null,
   }));
 
+const formatLocalDate = (date: Date): string => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+};
+
+const formatLocalTime = (date: Date): string => {
+  const hours = String(date.getHours()).padStart(2, '0');
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  return `${hours}:${minutes}`;
+};
+
 // Helper to convert API response to frontend format
 const apiToScheduledPost = (data: any): ScheduledPost => {
+  const scheduledAtDate = data.scheduledAt ? new Date(data.scheduledAt) : null;
   const mediaArray = Array.isArray(data.media) ? data.media.map((m: any) => ({
     id: m.id,
     type: m.type,
@@ -33,12 +47,15 @@ const apiToScheduledPost = (data: any): ScheduledPost => {
     ? data.mediaIds
     : mediaArray.map(m => m.id);
   
+  const scheduledDate = scheduledAtDate ? formatLocalDate(scheduledAtDate) : data.scheduledDate;
+  const scheduledTime = scheduledAtDate ? formatLocalTime(scheduledAtDate) : data.scheduledTime;
+
   return {
     id: data.id,
     title: data.title,
     caption: data.caption,
-    scheduledDate: data.scheduledDate,
-    scheduledTime: data.scheduledTime,
+    scheduledDate,
+    scheduledTime,
     scheduledAt: data.scheduledAt,
     platforms: Array.isArray(data.platforms) ? (data.platforms as Platform[]) : [],
     status: data.status,
