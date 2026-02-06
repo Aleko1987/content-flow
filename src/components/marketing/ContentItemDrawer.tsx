@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useContentOps } from '@/contexts/ContentOpsContext';
+import { useToast } from '@/hooks/use-toast';
 import {
   Sheet,
   SheetContent,
@@ -23,7 +24,9 @@ import { Separator } from '@/components/ui/separator';
 import { Plus, Wand2, Trash2, Upload, X } from 'lucide-react';
 import { MediaPicker } from './MediaPicker';
 import { apiClient } from '@/lib/api-client';
+import { scheduledPostApiService } from '@/services/scheduledPostApiService';
 import type { ContentStatus, ContentPillar, ContentFormat, Priority, ChannelKey, ChannelVariant } from '@/types/content-ops';
+import type { Platform } from '@/types/scheduled-post';
 
 interface ContentItemDrawerProps {
   itemId: string | null;
@@ -41,6 +44,15 @@ const channelLabels: Record<ChannelKey, string> = {
   whatsapp_status: 'WhatsApp Status',
 };
 
+const channelToPlatform: Partial<Record<ChannelKey, Platform>> = {
+  x: 'x',
+  instagram: 'instagram',
+  facebook: 'facebook',
+  linkedin: 'linkedin',
+  tiktok: 'tiktok',
+  youtube: 'youtube_shorts',
+};
+
 export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, open, onClose }) => {
   const { 
     getContentItem, 
@@ -51,14 +63,17 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
     deleteVariant,
     generateUtms,
     getTasksForContent,
+    getVariantsForContent,
     createTask,
     createTasksForAllChannels,
     refreshContentItems,
   } = useContentOps();
+  const { toast } = useToast();
   
   const item = itemId ? getContentItem(itemId) : null;
   const channels = getChannels();
   const enabledChannels = channels.filter(c => c.enabled);
+  const schedulableChannels = enabledChannels.filter(c => channelToPlatform[c.key]);
   
   // Store getContentItem in ref to avoid including it in effect dependencies
   // This prevents the effect from re-running when context state updates
@@ -79,6 +94,10 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   });
   const [uploading, setUploading] = useState(false);
   const [attachedMedia, setAttachedMedia] = useState<Array<{ id: string; url: string; filename: string }>>([]);
+  const [scheduleDate, setScheduleDate] = useState('');
+  const [scheduleTime, setScheduleTime] = useState('');
+  const [scheduleChannel, setScheduleChannel] = useState<ChannelKey>('x');
+  const [scheduling, setScheduling] = useState(false);
   
   // Initialize/reset draft only when dialog opens or itemId changes
   // Use ref to get item to avoid depending on getContentItem function reference
@@ -105,6 +124,61 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
       }
     }
   }, [open, itemId]); // Only reset when dialog opens/closes OR itemId changes, not on every item update
+
+  useEffect(() => {
+    if (!open) return;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    setScheduleDate(`${year}-${month}-${day}`);
+    setScheduleTime(`${hours}:${minutes}`);
+    if (!schedulableChannels.find(c => c.key === scheduleChannel)) {
+      const fallback = schedulableChannels[0]?.key;
+      if (fallback) {
+        setScheduleChannel(fallback);
+      }
+    }
+  }, [open, schedulableChannels, scheduleChannel]);
+
+  const handleScheduleToCalendar = async () => {
+    if (!itemId) return;
+    if (!scheduleDate || !scheduleTime) {
+      return toast({ title: 'Error', description: 'Date and time are required', variant: 'destructive' });
+    }
+    const platform = channelToPlatform[scheduleChannel];
+    if (!platform) {
+      return toast({ title: 'Error', description: 'Selected channel is not supported for calendar scheduling', variant: 'destructive' });
+    }
+
+    const variants = getVariantsForContent(itemId);
+    const variant = variants.find(v => v.channelKey === scheduleChannel);
+    const caption = variant?.caption || [item?.hook, item?.title].filter(Boolean).join('\n\n');
+
+    setScheduling(true);
+    try {
+      await scheduledPostApiService.create({
+        title: item?.title || null,
+        caption: caption || null,
+        contentItemId: itemId,
+        channelKey: scheduleChannel,
+        scheduledDate: scheduleDate,
+        scheduledTime: scheduleTime,
+        platforms: [platform],
+        media: [],
+      });
+      await apiClient.contentItems.updateStatus(itemId, 'scheduled');
+      await refreshContentItems();
+      toast({ title: 'Scheduled', description: 'Added to calendar' });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to schedule';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setScheduling(false);
+    }
+  };
   
   const handleSave = async () => {
     if (!itemId) return;
@@ -351,6 +425,62 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                 </Select>
               </div>
             </div>
+
+            <Card className="mt-4">
+              <CardHeader>
+                <CardTitle>Schedule to Calendar</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-2">
+                    <Label>Date</Label>
+                    <Input
+                      type="date"
+                      value={scheduleDate}
+                      onChange={(e) => setScheduleDate(e.target.value)}
+                      className="bg-secondary/50"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Time</Label>
+                    <Input
+                      type="time"
+                      value={scheduleTime}
+                      onChange={(e) => setScheduleTime(e.target.value)}
+                      className="bg-secondary/50"
+                    />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <Label>Channel</Label>
+                  <Select
+                    value={scheduleChannel}
+                    onValueChange={(value) => setScheduleChannel(value as ChannelKey)}
+                    disabled={schedulableChannels.length === 0}
+                  >
+                    <SelectTrigger className="bg-secondary/50">
+                      <SelectValue placeholder="Select channel" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {schedulableChannels.map(channel => (
+                        <SelectItem key={channel.key} value={channel.key}>
+                          {channelLabels[channel.key]}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <Button
+                  type="button"
+                  onClick={handleScheduleToCalendar}
+                  disabled={scheduling || schedulableChannels.length === 0}
+                >
+                  {scheduling ? 'Scheduling...' : 'Add to Calendar'}
+                </Button>
+              </CardContent>
+            </Card>
             
             <div className="space-y-2">
               <Label htmlFor="notes">Notes</Label>

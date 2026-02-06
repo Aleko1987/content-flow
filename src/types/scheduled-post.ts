@@ -2,6 +2,8 @@
 
 export type ScheduledPostStatus = 'planned' | 'queued' | 'published' | 'failed';
 
+import type { ChannelKey } from './content-ops';
+
 export type Platform = 'linkedin' | 'x' | 'instagram' | 'facebook' | 'tiktok' | 'youtube_shorts';
 
 export interface MediaItem {
@@ -18,6 +20,8 @@ export interface ScheduledPost {
   id: string;
   title: string | null;
   caption: string | null;
+  contentItemId?: string;
+  channelKey?: ChannelKey | null;
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime: string; // HH:mm
   scheduledAt: string; // ISO datetime
@@ -25,7 +29,6 @@ export interface ScheduledPost {
   status: ScheduledPostStatus;
   media: MediaItem[];
   mediaIds: string[]; // Derived from media[].id (source of truth: scheduled_post_media)
-  contentItemId?: string; // Link to ContentItem if applicable
   createdAt: string;
   updatedAt: string;
 }
@@ -33,11 +36,12 @@ export interface ScheduledPost {
 export interface ScheduledPostInput {
   title?: string;
   caption?: string;
+  contentItemId?: string;
+  channelKey?: ChannelKey | null;
   scheduledDate: string;
   scheduledTime: string;
   platforms: Platform[];
   media: MediaItem[];
-  contentItemId?: string;
 }
 
 // File validation constants

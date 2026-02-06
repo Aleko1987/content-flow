@@ -1,6 +1,6 @@
 import { and, eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { scheduledPosts } from '../db/schema.js';
+import { scheduledPosts, contentItems } from '../db/schema.js';
 import { getConnectedAccount } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
 import { logger } from '../utils/logger.js';
@@ -64,6 +64,12 @@ export const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
 
   if (postedToAny) {
     await markStatus(post.id, 'published');
+    if (post.contentItemId) {
+      await db
+        .update(contentItems)
+        .set({ status: 'posted', updatedAt: new Date() })
+        .where(eq(contentItems.id, post.contentItemId));
+    }
   } else {
     await markStatus(post.id, 'failed');
     throw new Error('No supported platforms selected for publishing');

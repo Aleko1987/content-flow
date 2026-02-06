@@ -54,6 +54,8 @@ const apiToScheduledPost = (data: any): ScheduledPost => {
     id: data.id,
     title: data.title,
     caption: data.caption,
+    contentItemId: data.contentItemId,
+    channelKey: data.channelKey,
     scheduledDate,
     scheduledTime,
     scheduledAt: data.scheduledAt,
@@ -61,7 +63,6 @@ const apiToScheduledPost = (data: any): ScheduledPost => {
     status: data.status,
     media: mediaArray,
     mediaIds: mediaIds,
-    contentItemId: data.contentItemId,
     createdAt: data.createdAt,
     updatedAt: data.updatedAt,
   };
@@ -125,6 +126,8 @@ const create = async (input: ScheduledPostInput): Promise<ScheduledPost> => {
     body: JSON.stringify({
       title: input.title || null,
       caption: input.caption || null,
+      contentItemId: input.contentItemId || null,
+      channelKey: input.channelKey || null,
       scheduledAt,
       platforms: input.platforms,
       status: 'planned',
@@ -147,6 +150,8 @@ const update = async (id: string, input: Partial<ScheduledPostInput>): Promise<S
   
   if (input.title !== undefined) body.title = input.title;
   if (input.caption !== undefined) body.caption = input.caption;
+  if (input.contentItemId !== undefined) body.contentItemId = input.contentItemId;
+  if (input.channelKey !== undefined) body.channelKey = input.channelKey;
   if (input.platforms !== undefined) body.platforms = input.platforms;
   if (input.media !== undefined) body.media = mediaToApi(input.media);
   
