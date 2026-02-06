@@ -146,7 +146,7 @@ export const ContentPlanTab: React.FC<ContentPlanTabProps> = ({
               <SelectItem value="all">All Status</SelectItem>
               <SelectItem value="draft">Draft</SelectItem>
               <SelectItem value="ready">Ready</SelectItem>
-              <SelectItem value="scheduled">Scheduled</SelectItem>
+              <SelectItem value="scheduled">Planned</SelectItem>
               <SelectItem value="posted">Posted</SelectItem>
               <SelectItem value="repurpose">Repurpose</SelectItem>
               <SelectItem value="archived">Archived</SelectItem>
@@ -261,7 +261,7 @@ export const ContentPlanTab: React.FC<ContentPlanTabProps> = ({
                       <SelectContent>
                         <SelectItem value="draft">Draft</SelectItem>
                         <SelectItem value="ready">Ready</SelectItem>
-                        <SelectItem value="scheduled">Scheduled</SelectItem>
+                        <SelectItem value="scheduled">Planned</SelectItem>
                         <SelectItem value="posted">Posted</SelectItem>
                       </SelectContent>
                     </Select>

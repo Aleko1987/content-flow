@@ -323,7 +323,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
                   <SelectContent>
                     <SelectItem value="draft">Draft</SelectItem>
                     <SelectItem value="ready">Ready</SelectItem>
-                    <SelectItem value="scheduled">Scheduled</SelectItem>
+                    <SelectItem value="scheduled">Planned</SelectItem>
                     <SelectItem value="posted">Posted</SelectItem>
                     <SelectItem value="repurpose">Repurpose</SelectItem>
                     <SelectItem value="archived">Archived</SelectItem>
