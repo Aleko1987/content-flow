@@ -1,6 +1,6 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { db } from '../db/index.js';
-import { scheduledPosts, scheduledPostMedia } from '../db/schema.js';
+import { scheduledPosts, scheduledPostMedia, publishTasks, channelVariants, contentItems } from '../db/schema.js';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
@@ -27,6 +27,8 @@ const mediaItemSchema = z.object({
 const createScheduledPostSchema = z.object({
   title: z.string().nullable().optional(),
   caption: z.string().nullable().optional(),
+  contentItemId: z.string().nullable().optional(),
+  channelKey: z.string().nullable().optional(),
   scheduledAt: z.string().datetime(),
   platforms: z.array(platformSchema).default([]),
   status: statusSchema.default('planned'),
@@ -36,6 +38,8 @@ const createScheduledPostSchema = z.object({
 const updateScheduledPostSchema = z.object({
   title: z.string().nullable().optional(),
   caption: z.string().nullable().optional(),
+  contentItemId: z.string().nullable().optional(),
+  channelKey: z.string().nullable().optional(),
   scheduledAt: z.string().datetime().optional(),
   platforms: z.array(platformSchema).optional(),
   status: statusSchema.optional(),
@@ -76,6 +80,8 @@ const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPost
     id: post.id,
     title: post.title,
     caption: post.caption,
+    contentItemId: post.contentItemId ?? null,
+    channelKey: post.channelKey ?? null,
     scheduledAt: post.scheduledAt.toISOString(),
     scheduledDate: post.scheduledAt.toISOString().split('T')[0],
     scheduledTime: post.scheduledAt.toISOString().split('T')[1].substring(0, 5),
@@ -202,7 +208,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
-    const { title, caption, scheduledAt, platforms, status, media } = parsed.data;
+    const { title, caption, contentItemId, channelKey, scheduledAt, platforms, status, media } = parsed.data;
     const postId = generateId();
     const now = new Date();
     
@@ -211,6 +217,8 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       id: postId,
       title: title ?? null,
       caption: caption ?? null,
+      contentItemId: contentItemId ?? null,
+      channelKey: channelKey ?? null,
       scheduledAt: new Date(scheduledAt),
       platforms,
       status,
@@ -263,7 +271,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       return res.status(404).json({ error: 'Scheduled post not found' });
     }
 
-    const { title, caption, scheduledAt, platforms, status, media } = parsed.data;
+    const { title, caption, contentItemId, channelKey, scheduledAt, platforms, status, media } = parsed.data;
     const now = new Date();
 
     // Build update object (no mediaIds - derived from scheduled_post_media)
@@ -273,12 +281,45 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     
     if (title !== undefined) updates.title = title;
     if (caption !== undefined) updates.caption = caption;
-    if (scheduledAt !== undefined) updates.scheduledAt = new Date(scheduledAt);
+    if (scheduledAt !== undefined) {
+      updates.scheduledAt = new Date(scheduledAt);
+      // Reset status to planned when rescheduling unless explicitly overridden
+      if (status === undefined) {
+        updates.status = 'planned';
+      }
+    }
     if (platforms !== undefined) updates.platforms = platforms;
     if (status !== undefined) updates.status = status;
+    if (contentItemId !== undefined) updates.contentItemId = contentItemId;
+    if (channelKey !== undefined) updates.channelKey = channelKey;
 
     // Update the post
     await db.update(scheduledPosts).set(updates).where(eq(scheduledPosts.id, id));
+
+    // Sync linked publish task if scheduledAt updated
+    if (scheduledAt !== undefined && (existing.contentItemId || contentItemId) && (existing.channelKey || channelKey)) {
+      const linkedContentItemId = contentItemId ?? existing.contentItemId;
+      const linkedChannelKey = channelKey ?? existing.channelKey;
+      if (linkedContentItemId && linkedChannelKey) {
+        await db
+          .update(publishTasks)
+          .set({
+            scheduledFor: new Date(scheduledAt),
+            state: 'scheduled',
+            updatedAt: new Date(),
+          })
+          .where(
+            and(
+              eq(publishTasks.contentItemId, linkedContentItemId),
+              eq(publishTasks.channelKey, linkedChannelKey)
+            )
+          );
+        await db
+          .update(contentItems)
+          .set({ status: 'scheduled', updatedAt: new Date() })
+          .where(eq(contentItems.id, linkedContentItemId));
+      }
+    }
 
     // Replace media if provided
     if (media !== undefined) {
