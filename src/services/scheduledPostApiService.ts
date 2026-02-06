@@ -217,6 +217,20 @@ const createFromFiles = async (
   return results;
 };
 
+// Process due posts (server-side runner)
+const processDue = async (): Promise<{ processed: number; published: number; failed: number }> => {
+  const response = await fetch(`${API_FULL_URL}/scheduled-posts/process-due`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Failed to process due posts: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
 export const scheduledPostApiService = {
   getAll,
   getById,
@@ -227,4 +241,5 @@ export const scheduledPostApiService = {
   remove,
   moveToDate,
   createFromFiles,
+  processDue,
 };

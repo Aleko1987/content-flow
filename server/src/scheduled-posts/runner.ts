@@ -64,7 +64,7 @@ const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
   }
 };
 
-const processDueScheduledPosts = async () => {
+export const processDueScheduledPosts = async () => {
   if (!ENABLED) return;
 
   const now = new Date();
@@ -74,6 +74,9 @@ const processDueScheduledPosts = async () => {
     .where(and(lte(scheduledPosts.scheduledAt, now), eq(scheduledPosts.status, 'planned')))
     .limit(MAX_BATCH);
 
+  let published = 0;
+  let failed = 0;
+
   for (const post of duePosts) {
     try {
       const claimed = await claimPost(post.id, now);
@@ -81,11 +84,15 @@ const processDueScheduledPosts = async () => {
         continue;
       }
       await executePost(post);
+      published += 1;
     } catch (error) {
       logger.error(`Failed to publish scheduled post ${post.id}: ${String(error)}`);
       await markStatus(post.id, 'failed');
+      failed += 1;
     }
   }
+
+  return { processed: duePosts.length, published, failed };
 };
 
 export const startScheduledPostRunner = () => {

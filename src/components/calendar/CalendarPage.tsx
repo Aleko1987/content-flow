@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { format, startOfMonth, endOfMonth, startOfWeek, endOfWeek, addDays, isSameMonth, isSameDay, addMonths, subMonths, addWeeks, subWeeks } from 'date-fns';
 import { Button } from '@/components/ui/button';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
@@ -22,6 +22,7 @@ export const CalendarPage: React.FC = () => {
   const [selectedPost, setSelectedPost] = useState<ScheduledPost | null>(null);
   const [selectedDate, setSelectedDate] = useState<string | null>(null);
   const [draggedPostId, setDraggedPostId] = useState<string | null>(null);
+  const processingRef = useRef(false);
 
   // Calculate visible date range based on view mode
   const getVisibleRange = useCallback(() => {
@@ -53,6 +54,30 @@ export const CalendarPage: React.FC = () => {
   }, [getVisibleRange, toast]);
 
   useEffect(() => { loadPosts(); }, [loadPosts]);
+
+  useEffect(() => {
+    let isMounted = true;
+
+    const tick = async () => {
+      if (processingRef.current || !isMounted) return;
+      processingRef.current = true;
+      try {
+        await scheduledPostApiService.processDue();
+        await loadPosts();
+      } catch (error) {
+        console.error('Failed to process due scheduled posts:', error);
+      } finally {
+        processingRef.current = false;
+      }
+    };
+
+    tick();
+    const intervalId = window.setInterval(tick, 60_000);
+    return () => {
+      isMounted = false;
+      window.clearInterval(intervalId);
+    };
+  }, [loadPosts]);
 
   const navigate = (dir: 'prev' | 'next') => {
     if (viewMode === 'month') {

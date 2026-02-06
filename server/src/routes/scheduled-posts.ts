@@ -4,6 +4,7 @@ import { scheduledPosts, scheduledPostMedia } from '../db/schema.js';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
+import { processDueScheduledPosts } from '../scheduled-posts/runner.js';
 
 const router = Router();
 
@@ -153,6 +154,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
 
     logger.info(`Fetched ${response.length} scheduled posts for range ${from} to ${to}`);
     res.json(response);
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/content-ops/scheduled-posts/process-due
+router.post('/process-due', async (_req: Request, res: Response, next: NextFunction) => {
+  try {
+    const result = await processDueScheduledPosts();
+    res.json(result ?? { processed: 0, published: 0, failed: 0 });
   } catch (error) {
     next(error);
   }
