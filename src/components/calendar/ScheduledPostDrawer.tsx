@@ -46,6 +46,20 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const [platforms, setPlatforms] = useState<Platform[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [saving, setSaving] = useState(false);
+  const [postingNow, setPostingNow] = useState(false);
+
+  const formatLocalDate = (value: Date) => {
+    const year = value.getFullYear();
+    const month = String(value.getMonth() + 1).padStart(2, '0');
+    const day = String(value.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const formatLocalTime = (value: Date) => {
+    const hours = String(value.getHours()).padStart(2, '0');
+    const minutes = String(value.getMinutes()).padStart(2, '0');
+    return `${hours}:${minutes}`;
+  };
 
   useEffect(() => {
     if (post) {
@@ -98,6 +112,26 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     } catch (error) {
       console.error('Delete failed:', error);
       toast({ title: 'Error', description: 'Failed to delete', variant: 'destructive' });
+    }
+  };
+
+  const handlePostNow = async () => {
+    if (!post) return;
+    setPostingNow(true);
+    try {
+      const now = new Date();
+      const scheduledDate = formatLocalDate(now);
+      const scheduledTime = formatLocalTime(now);
+      await scheduledPostApiService.update(post.id, { scheduledDate, scheduledTime });
+      await scheduledPostApiService.processDue();
+      toast({ title: 'Posted', description: 'Post queued for immediate publishing' });
+      onSave();
+      onClose();
+    } catch (error) {
+      console.error('Post now failed:', error);
+      toast({ title: 'Error', description: 'Failed to post now', variant: 'destructive' });
+    } finally {
+      setPostingNow(false);
     }
   };
 
@@ -161,7 +195,14 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
 
         <SheetFooter className="flex gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
-          <Button onClick={handleSave} disabled={saving}>{saving ? 'Saving...' : 'Save'}</Button>
+          {post && (
+            <Button variant="secondary" onClick={handlePostNow} disabled={saving || postingNow}>
+              {postingNow ? 'Posting...' : 'Post Now'}
+            </Button>
+          )}
+          <Button onClick={handleSave} disabled={saving || postingNow}>
+            {saving ? 'Saving...' : 'Save'}
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
