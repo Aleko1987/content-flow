@@ -58,16 +58,17 @@ export const SettingsTab: React.FC = () => {
     const success = params.get('success');
     const error = params.get('error');
 
-    if (provider === 'x' && success) {
+    if (provider && success) {
+      const providerLabel = provider === 'instagram' ? 'Instagram' : 'X';
       if (success === '1') {
         toast({
-          title: 'X connected',
-          description: 'Your X account is now connected.',
+          title: `${providerLabel} connected`,
+          description: `Your ${providerLabel} account is now connected.`,
         });
         refreshIntegrations();
       } else {
         toast({
-          title: 'X connection failed',
+          title: `${providerLabel} connection failed`,
           description: error || 'Authorization failed.',
           variant: 'destructive',
         });
@@ -170,6 +171,34 @@ export const SettingsTab: React.FC = () => {
         <CardContent>
           <p className="text-sm text-muted-foreground">
             Connect your X account to enable publishing.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📷</span>
+              <div>
+                <CardTitle className="text-base">Instagram</CardTitle>
+                <CardDescription className="text-xs">
+                  Status: {integrationsLoading ? 'Loading…' : getIntegrationStatus('instagram')}
+                </CardDescription>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              disabled={integrationsLoading || connectingProvider === 'instagram'}
+              onClick={() => handleConnect('instagram')}
+            >
+              {getIntegrationStatus('instagram') === 'connected' ? 'Reconnect' : 'Connect'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Connect your Instagram business account to publish images.
           </p>
         </CardContent>
       </Card>

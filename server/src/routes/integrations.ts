@@ -20,7 +20,8 @@ type TokenData = Record<string, unknown> & {
 // In-memory store for OAuth state (v1 - TTL 10 minutes)
 interface OAuthState {
   state: string;
-  codeVerifier: string;
+  codeVerifier?: string;
+  provider: 'x' | 'instagram';
   expiresAt: number;
 }
 
@@ -58,6 +59,7 @@ function generatePKCE(): { codeVerifier: string; codeChallenge: string } {
 router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const providers: Array<{ provider: string; status: 'connected' | 'disconnected' }> = [
     { provider: 'x', status: 'disconnected' },
+    { provider: 'instagram', status: 'disconnected' },
   ];
   
   // Check connection status for each provider
@@ -115,6 +117,7 @@ router.post('/x/connect/start', asyncHandler(async (req: Request, res: Response)
   oauthStates.set(state, {
     state,
     codeVerifier,
+    provider: 'x',
     expiresAt: Date.now() + 10 * 60 * 1000,
   });
   
@@ -225,6 +228,10 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
   // Remove state from memory
   oauthStates.delete(state as string);
   
+  if (stateData.provider !== 'x') {
+    return res.redirect(buildRedirectUrl(false, 'invalid_provider'));
+  }
+
   // Exchange code for tokens
   const clientId = process.env.X_CLIENT_ID;
   const clientSecret = process.env.X_CLIENT_SECRET;
@@ -251,7 +258,7 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
         grant_type: 'authorization_code',
         client_id: cleanClientId,
         redirect_uri: redirectUri,
-        code_verifier: stateData.codeVerifier,
+        code_verifier: stateData.codeVerifier || '',
       }),
     });
     
@@ -296,6 +303,205 @@ router.get('/x/connect/callback', asyncHandler(async (req: Request, res: Respons
   } catch (error) {
     const errorMsg = error instanceof Error ? error.message : 'unknown_error';
     console.log(`[X OAuth] callback - error: ${errorMsg}`);
+    res.redirect(buildRedirectUrl(false, errorMsg));
+  }
+}));
+
+/**
+ * POST /api/content-ops/integrations/instagram/connect/start
+ * Initiates Facebook OAuth flow for Instagram Graph API
+ */
+router.post('/instagram/connect/start', asyncHandler(async (req: Request, res: Response) => {
+  const clientId = process.env.IG_CLIENT_ID;
+  const redirectUri = process.env.IG_REDIRECT_URI;
+
+  if (!clientId || !redirectUri) {
+    const missing = [];
+    if (!clientId) missing.push('IG_CLIENT_ID');
+    if (!redirectUri) missing.push('IG_REDIRECT_URI');
+    return res.status(400).json({
+      error: 'Missing required environment variables',
+      missing,
+    });
+  }
+
+  const state = randomBytes(32).toString('base64url');
+  oauthStates.set(state, {
+    state,
+    provider: 'instagram',
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  });
+
+  const scopes = [
+    'instagram_basic',
+    'instagram_content_publish',
+    'pages_show_list',
+    'pages_read_engagement',
+  ];
+
+  const params = new URLSearchParams({
+    client_id: clientId.trim(),
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: scopes.join(','),
+    state,
+  });
+
+  const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+  res.json({ url: authUrl });
+}));
+
+/**
+ * GET /api/content-ops/integrations/instagram/connect/callback
+ * Handles OAuth callback from Facebook for Instagram
+ */
+router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res: Response) => {
+  const { state, code, error } = req.query;
+
+  const getAppBaseUrl = () => {
+    const url = process.env.APP_BASE_URL || 'http://localhost:8080';
+    return url.replace(/\/+$/, '');
+  };
+
+  const buildRedirectUrl = (success: boolean, errorMsg?: string) => {
+    const base = getAppBaseUrl();
+    const params = new URLSearchParams({
+      provider: 'instagram',
+      success: success ? '1' : '0',
+    });
+    if (errorMsg) {
+      params.set('error', errorMsg);
+    }
+    return `${base}/?tab=settings&${params.toString()}`;
+  };
+
+  if (error) {
+    return res.redirect(buildRedirectUrl(false, error as string));
+  }
+
+  if (!state || !code) {
+    return res.redirect(buildRedirectUrl(false, 'missing_params'));
+  }
+
+  const stateData = oauthStates.get(state as string);
+  if (!stateData || stateData.expiresAt < Date.now()) {
+    return res.redirect(buildRedirectUrl(false, 'invalid_state'));
+  }
+
+  if (stateData.provider !== 'instagram') {
+    return res.redirect(buildRedirectUrl(false, 'invalid_provider'));
+  }
+
+  oauthStates.delete(state as string);
+
+  const clientId = process.env.IG_CLIENT_ID;
+  const clientSecret = process.env.IG_CLIENT_SECRET;
+  const redirectUri = process.env.IG_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    return res.redirect(buildRedirectUrl(false, 'config_missing'));
+  }
+
+  const graphBase = 'https://graph.facebook.com/v19.0';
+
+  try {
+    const tokenParams = new URLSearchParams({
+      client_id: clientId.trim(),
+      redirect_uri: redirectUri,
+      client_secret: clientSecret,
+      code: code as string,
+    });
+
+    const tokenResponse = await fetch(`${graphBase}/oauth/access_token?${tokenParams.toString()}`);
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Token exchange failed: ${tokenResponse.status} - ${errorText}`);
+    }
+
+    const shortToken = await tokenResponse.json() as { access_token: string; expires_in?: number };
+    if (!shortToken.access_token) {
+      throw new Error('Token exchange failed: missing access_token');
+    }
+
+    const longParams = new URLSearchParams({
+      grant_type: 'fb_exchange_token',
+      client_id: clientId.trim(),
+      client_secret: clientSecret,
+      fb_exchange_token: shortToken.access_token,
+    });
+
+    const longResponse = await fetch(`${graphBase}/oauth/access_token?${longParams.toString()}`);
+    if (!longResponse.ok) {
+      const errorText = await longResponse.text();
+      throw new Error(`Long-lived token exchange failed: ${longResponse.status} - ${errorText}`);
+    }
+
+    const longToken = await longResponse.json() as { access_token: string; expires_in?: number };
+    const longAccessToken = longToken.access_token;
+    if (!longAccessToken) {
+      throw new Error('Long-lived token exchange failed: missing access_token');
+    }
+
+    const pagesResponse = await fetch(`${graphBase}/me/accounts?access_token=${encodeURIComponent(longAccessToken)}`);
+    if (!pagesResponse.ok) {
+      const errorText = await pagesResponse.text();
+      throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
+    }
+
+    const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string }> };
+    const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
+    if (pages.length === 0) {
+      throw new Error('No Facebook pages found for this account');
+    }
+
+    let igUserId: string | null = null;
+    let pageAccessToken: string | null = null;
+    let pageId: string | null = null;
+
+    for (const page of pages) {
+      const candidateToken = page.access_token || longAccessToken;
+      const igResponse = await fetch(`${graphBase}/${page.id}?fields=instagram_business_account&access_token=${encodeURIComponent(candidateToken)}`);
+      if (!igResponse.ok) {
+        continue;
+      }
+      const igData = await igResponse.json() as { instagram_business_account?: { id?: string } };
+      if (igData.instagram_business_account?.id) {
+        igUserId = igData.instagram_business_account.id;
+        pageAccessToken = candidateToken;
+        pageId = page.id;
+        break;
+      }
+    }
+
+    if (!igUserId || !pageAccessToken) {
+      throw new Error('No Instagram business account linked to available pages');
+    }
+
+    const expiresAt = longToken.expires_in
+      ? Date.now() + (typeof longToken.expires_in === 'number' ? longToken.expires_in : 0) * 1000
+      : undefined;
+
+    const { upsertConnectedAccount } = await import('../db/connectedAccounts.js');
+    await upsertConnectedAccount(
+      'instagram',
+      {
+        access_token: pageAccessToken,
+        ig_user_id: igUserId,
+        page_id: pageId,
+        expires_at: expiresAt,
+      },
+      {
+        expires_at: expiresAt,
+        page_id: pageId,
+      },
+      null,
+      'connected',
+      igUserId
+    );
+
+    res.redirect(buildRedirectUrl(true));
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'unknown_error';
     res.redirect(buildRedirectUrl(false, errorMsg));
   }
 }));

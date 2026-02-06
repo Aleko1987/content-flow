@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { db } from '../db/index.js';
-import { publishTasks, publishLogs, intentEvents, channels, contentItems, channelVariants } from '../db/schema.js';
+import { publishTasks, publishLogs, intentEvents, channels, contentItems, channelVariants, mediaAssets, contentItemMedia } from '../db/schema.js';
 import { eq, and, or, gte, lte, inArray, sql } from 'drizzle-orm';
 import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
@@ -507,9 +507,15 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
       throw new Error('Channel variant not found');
     }
 
-    // Determine provider: use channel variant's platform/provider field if it exists, otherwise hardcode 'x'
-    // For now, hardcode 'x' since channel_variants doesn't have a provider field
-    const providerKey = 'x';
+    const providerKey = task.channelKey === 'x'
+      ? 'x'
+      : task.channelKey === 'instagram'
+        ? 'instagram'
+        : null;
+
+    if (!providerKey) {
+      throw new Error(`No publish provider configured for channel: ${task.channelKey}`);
+    }
     
     // Get connected account
     const account = await getConnectedAccount(providerKey);
@@ -529,9 +535,15 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
     }
 
     // Render text: ${hook}\n\n${title} (fallback to title)
-    const text = contentItem.hook
+    const defaultText = contentItem.hook
       ? `${contentItem.hook}\n\n${contentItem.title}`
       : contentItem.title;
+    const text = providerKey === 'instagram'
+      ? [
+        (variant.caption || '').trim() || defaultText,
+        (variant.hashtags || '').trim(),
+      ].filter(Boolean).join('\n\n')
+      : defaultText;
 
     // Write publish_log for provider.request
     const requestLogId = generateId();
@@ -549,12 +561,59 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
     const provider = getProvider(providerKey);
     let providerResult: { providerRef: string; canonicalUrl?: string };
     try {
-      const result = await provider.postText(text, account.tokenData);
-      // Provider returns string (tweet ID) or object with providerRef and canonicalUrl
-      if (typeof result === 'string') {
-        providerResult = { providerRef: result };
+      if (providerKey === 'instagram') {
+        if (!provider.postImage) {
+          throw new Error('Instagram provider does not support image publishing');
+        }
+
+        const resolveMediaUrl = async () => {
+          if (variant.mediaAssetId) {
+            const [asset] = await db
+              .select()
+              .from(mediaAssets)
+              .where(eq(mediaAssets.id, variant.mediaAssetId))
+              .limit(1);
+            return asset || null;
+          }
+
+          const [link] = await db
+            .select()
+            .from(contentItemMedia)
+            .where(eq(contentItemMedia.contentItemId, task.contentItemId))
+            .limit(1);
+
+          if (!link) {
+            return null;
+          }
+
+          const [asset] = await db
+            .select()
+            .from(mediaAssets)
+            .where(eq(mediaAssets.id, link.mediaAssetId))
+            .limit(1);
+
+          return asset || null;
+        };
+
+        const asset = await resolveMediaUrl();
+        const mediaUrl = asset?.publicUrl || null;
+        const mimeType = asset?.mimeType || '';
+
+        if (!mediaUrl) {
+          throw new Error('Instagram publishing requires a media asset with a public URL');
+        }
+        if (mimeType && !mimeType.startsWith('image/')) {
+          throw new Error(`Instagram publishing only supports images right now (found ${mimeType})`);
+        }
+
+        const result = await provider.postImage(
+          { caption: text, imageUrl: mediaUrl },
+          account.tokenData
+        );
+        providerResult = typeof result === 'string' ? { providerRef: result } : result;
       } else {
-        providerResult = result;
+        const result = await provider.postText(text, account.tokenData);
+        providerResult = typeof result === 'string' ? { providerRef: result } : result;
       }
     } catch (providerError) {
       // Write publish_log for provider.response (error)
@@ -582,7 +641,9 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
     });
 
     // On success: status='success', provider_ref=tweetId, clear locks
-    const canonicalUrl = providerResult.canonicalUrl || `https://twitter.com/i/web/status/${providerResult.providerRef}`;
+    const canonicalUrl = providerKey === 'x'
+      ? providerResult.canonicalUrl || `https://twitter.com/i/web/status/${providerResult.providerRef}`
+      : providerResult.canonicalUrl || null;
     await db
       .update(publishTasks)
       .set({

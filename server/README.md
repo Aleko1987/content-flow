@@ -37,6 +37,19 @@ NODE_ENV=development
 
 # CORS - Allowed origins (comma-separated)
 CORS_ORIGINS=http://localhost:8080,https://lovable.dev
+
+# X OAuth (optional)
+X_CLIENT_ID=
+X_CLIENT_SECRET=
+X_REDIRECT_URI=http://localhost:3001/api/content-ops/integrations/x/connect/callback
+
+# Instagram Graph API (via Facebook Login)
+IG_CLIENT_ID=
+IG_CLIENT_SECRET=
+IG_REDIRECT_URI=http://localhost:3001/api/content-ops/integrations/instagram/connect/callback
+
+# App base URL used for OAuth redirects (frontend)
+APP_BASE_URL=http://localhost:8080
 ```
 
 ### Database Setup
