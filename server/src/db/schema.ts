@@ -129,6 +129,8 @@ export const scheduledPosts = pgTable('scheduled_posts', {
   id: text('id').primaryKey(),
   title: text('title'),
   caption: text('caption'),
+  contentItemId: text('content_item_id').references(() => contentItems.id, { onDelete: 'set null' }),
+  channelKey: varchar('channel_key', { length: 50 }),
   scheduledAt: timestamp('scheduled_at', { withTimezone: true }).notNull(),
   platforms: jsonb('platforms').$type<string[]>().notNull().default([]),
   status: varchar('status', { length: 50 }).notNull().default('planned'),
@@ -136,6 +138,7 @@ export const scheduledPosts = pgTable('scheduled_posts', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
 }, (table) => ({
   scheduledAtIdx: index('scheduled_posts_scheduled_at_idx').on(table.scheduledAt),
+  uniqueContentChannel: unique().on(table.contentItemId, table.channelKey),
 }));
 
 // Scheduled post media table
