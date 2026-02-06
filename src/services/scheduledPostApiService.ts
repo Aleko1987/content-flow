@@ -231,6 +231,19 @@ const processDue = async (): Promise<{ processed: number; published: number; fai
   return response.json();
 };
 
+const executeNow = async (id: string): Promise<{ status: string }> => {
+  const response = await fetch(`${API_FULL_URL}/scheduled-posts/${id}/execute`, {
+    method: 'POST',
+  });
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({}));
+    throw new Error(error.error || `Failed to execute scheduled post: ${response.statusText}`);
+  }
+
+  return response.json();
+};
+
 export const scheduledPostApiService = {
   getAll,
   getById,
@@ -242,4 +255,5 @@ export const scheduledPostApiService = {
   moveToDate,
   createFromFiles,
   processDue,
+  executeNow,
 };

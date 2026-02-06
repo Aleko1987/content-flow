@@ -4,7 +4,7 @@ import { scheduledPosts, scheduledPostMedia } from '../db/schema.js';
 import { eq, and, gte, lte, inArray } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
-import { processDueScheduledPosts } from '../scheduled-posts/runner.js';
+import { processDueScheduledPosts, executePost } from '../scheduled-posts/runner.js';
 
 const router = Router();
 
@@ -164,6 +164,29 @@ router.post('/process-due', async (_req: Request, res: Response, next: NextFunct
   try {
     const result = await processDueScheduledPosts();
     res.json(result ?? { processed: 0, published: 0, failed: 0 });
+  } catch (error) {
+    next(error);
+  }
+});
+
+// POST /api/content-ops/scheduled-posts/:id/execute
+router.post('/:id/execute', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { id } = req.params;
+    const [post] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, id));
+    if (!post) {
+      return res.status(404).json({ error: 'Scheduled post not found' });
+    }
+
+    await db
+      .update(scheduledPosts)
+      .set({ status: 'processing', updatedAt: new Date() })
+      .where(eq(scheduledPosts.id, id));
+
+    await executePost(post);
+
+    const [updated] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, id));
+    res.json({ status: updated?.status ?? post.status });
   } catch (error) {
     next(error);
   }

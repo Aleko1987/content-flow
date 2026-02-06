@@ -30,7 +30,7 @@ const normalizeText = (caption: string | null | undefined) => {
   return text;
 };
 
-const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
+export const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
   const platforms = Array.isArray(post.platforms) ? post.platforms : [];
   const text = normalizeText(post.caption);
 
