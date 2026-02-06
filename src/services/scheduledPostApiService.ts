@@ -218,7 +218,7 @@ const createFromFiles = async (
 };
 
 // Process due posts (server-side runner)
-const processDue = async (): Promise<{ processed: number; published: number; failed: number }> => {
+const processDue = async (): Promise<{ processed: number; published: number; failed: number; errors?: Array<{ id: string; error: string }> }> => {
   const response = await fetch(`${API_FULL_URL}/scheduled-posts/process-due`, {
     method: 'POST',
   });

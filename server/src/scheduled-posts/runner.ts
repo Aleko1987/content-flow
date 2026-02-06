@@ -76,6 +76,7 @@ export const processDueScheduledPosts = async () => {
 
   let published = 0;
   let failed = 0;
+  const errors: Array<{ id: string; error: string }> = [];
 
   for (const post of duePosts) {
     try {
@@ -86,13 +87,15 @@ export const processDueScheduledPosts = async () => {
       await executePost(post);
       published += 1;
     } catch (error) {
-      logger.error(`Failed to publish scheduled post ${post.id}: ${String(error)}`);
+      const message = error instanceof Error ? error.message : String(error);
+      logger.error(`Failed to publish scheduled post ${post.id}: ${message}`);
       await markStatus(post.id, 'failed');
       failed += 1;
+      errors.push({ id: post.id, error: message });
     }
   }
 
-  return { processed: duePosts.length, published, failed };
+  return { processed: duePosts.length, published, failed, errors };
 };
 
 export const startScheduledPostRunner = () => {

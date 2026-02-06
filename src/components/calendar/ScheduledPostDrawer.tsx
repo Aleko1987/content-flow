@@ -123,7 +123,12 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
       const scheduledDate = formatLocalDate(now);
       const scheduledTime = formatLocalTime(now);
       await scheduledPostApiService.update(post.id, { scheduledDate, scheduledTime });
-      await scheduledPostApiService.processDue();
+      const result = await scheduledPostApiService.processDue();
+      if (result.failed > 0) {
+        const errorMessage = result.errors?.find(e => e.id === post.id)?.error || 'Failed to publish';
+        toast({ title: 'Failed to post', description: errorMessage, variant: 'destructive' });
+        return;
+      }
       toast({ title: 'Posted', description: 'Post queued for immediate publishing' });
       onSave();
       onClose();
