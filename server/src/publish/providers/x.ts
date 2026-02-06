@@ -16,7 +16,30 @@ interface XCreateTweetResponse {
 export class XProvider implements PublishProvider {
   private readonly apiBaseUrl = 'https://api.twitter.com/2';
   
+  private truncateText(text: string): string {
+    return text.length <= 280 ? text : text.substring(0, 280);
+  }
+
+  private appendUniqueSuffix(text: string): string {
+    const suffix = `\n\n#cf${Date.now().toString(36).slice(-6)}`;
+    const maxLength = 280 - suffix.length;
+    const trimmed = text.length > maxLength ? text.substring(0, maxLength) : text;
+    return `${trimmed}${suffix}`;
+  }
+
+  private isDuplicateError(message: string): boolean {
+    return message.toLowerCase().includes('duplicate content');
+  }
+
   async postText(text: string, tokenData: { access_token: string; [key: string]: unknown }): Promise<string | ProviderResult> {
+    return this.postTextInternal(text, tokenData, false);
+  }
+
+  private async postTextInternal(
+    text: string,
+    tokenData: { access_token: string; [key: string]: unknown },
+    hasRetried: boolean
+  ): Promise<string | ProviderResult> {
     const accessToken = tokenData.access_token;
     
     if (!accessToken) {
@@ -33,7 +56,7 @@ export class XProvider implements PublishProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        text: text.substring(0, 280), // X character limit
+        text: this.truncateText(text), // X character limit
       }),
     });
     
@@ -46,6 +69,11 @@ export class XProvider implements PublishProvider {
         errorMessage = errorJson.detail || errorJson.title || errorMessage;
       } catch {
         errorMessage = `${errorMessage} - ${errorText}`;
+      }
+
+      if (!hasRetried && this.isDuplicateError(errorMessage)) {
+        const uniqueText = this.appendUniqueSuffix(text);
+        return this.postTextInternal(uniqueText, tokenData, true);
       }
       
       throw new Error(errorMessage);

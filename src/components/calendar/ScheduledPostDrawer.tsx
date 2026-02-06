@@ -137,7 +137,8 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
       onClose();
     } catch (error) {
       console.error('Post now failed:', error);
-      toast({ title: 'Error', description: 'Failed to post now', variant: 'destructive' });
+      const message = error instanceof Error ? error.message : 'Failed to post now';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
       setPostingNow(false);
     }
