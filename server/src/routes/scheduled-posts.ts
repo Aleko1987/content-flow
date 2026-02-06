@@ -183,12 +183,13 @@ router.post('/:id/execute', async (req: Request, res: Response, next: NextFuncti
       .set({ status: 'processing', updatedAt: new Date() })
       .where(eq(scheduledPosts.id, id));
 
-    await executePost(post);
+    const result = await executePost(post);
 
     const [updated] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, id));
-    res.json({ status: updated?.status ?? post.status });
+    res.json({ status: updated?.status ?? post.status, results: result?.results ?? [] });
   } catch (error) {
-    next(error);
+    const message = error instanceof Error ? error.message : 'Failed to execute scheduled post';
+    res.status(400).json({ error: message });
   }
 });
 

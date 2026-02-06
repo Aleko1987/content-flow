@@ -4,6 +4,7 @@ import { scheduledPosts } from '../db/schema.js';
 import { getConnectedAccount } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
 import { logger } from '../utils/logger.js';
+import type { ProviderResult } from '../publish/providers/types.js';
 
 const ENABLED = process.env.SCHEDULED_POSTS_ENABLED !== 'false';
 const INTERVAL_MS = Number(process.env.SCHEDULED_POSTS_INTERVAL_MS ?? 60_000);
@@ -33,11 +34,12 @@ const normalizeText = (caption: string | null | undefined) => {
 export const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
   const platforms = Array.isArray(post.platforms) ? post.platforms : [];
   const text = normalizeText(post.caption);
+  const results: Array<{ providerKey: string; providerRef: string; canonicalUrl?: string }> = [];
 
   if (!text) {
     logger.warn(`Scheduled post ${post.id} has empty caption; marking failed`);
     await markStatus(post.id, 'failed');
-    return;
+    throw new Error('Caption is required to publish');
   }
 
   let postedToAny = false;
@@ -48,7 +50,10 @@ export const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
       throw new Error('No connected X account found');
     }
     const provider = getProvider('x');
-    await provider.postText(text, account.tokenData);
+    const result = await provider.postText(text, account.tokenData);
+    const normalized: ProviderResult =
+      typeof result === 'string' ? { providerRef: result } : result;
+    results.push({ providerKey: 'x', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
     postedToAny = true;
   }
 
@@ -61,7 +66,10 @@ export const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
     await markStatus(post.id, 'published');
   } else {
     await markStatus(post.id, 'failed');
+    throw new Error('No supported platforms selected for publishing');
   }
+
+  return { postedToAny, results };
 };
 
 export const processDueScheduledPosts = async () => {

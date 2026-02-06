@@ -128,7 +128,11 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
         toast({ title: 'Failed to post', description: 'Publish failed. Check Render logs for details.', variant: 'destructive' });
         return;
       }
-      toast({ title: 'Posted', description: 'Post queued for immediate publishing' });
+      const canonicalUrl = result.results?.find(r => r.canonicalUrl)?.canonicalUrl;
+      toast({
+        title: 'Posted',
+        description: canonicalUrl ? `Published: ${canonicalUrl}` : 'Post queued for immediate publishing',
+      });
       onSave();
       onClose();
     } catch (error) {
