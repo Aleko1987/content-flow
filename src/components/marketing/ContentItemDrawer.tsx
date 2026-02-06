@@ -98,6 +98,7 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   const [scheduleTime, setScheduleTime] = useState('');
   const [scheduleChannel, setScheduleChannel] = useState<ChannelKey>('x');
   const [scheduling, setScheduling] = useState(false);
+  const scheduleInitializedRef = useRef(false);
   
   // Initialize/reset draft only when dialog opens or itemId changes
   // Use ref to get item to avoid depending on getContentItem function reference
@@ -126,7 +127,12 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
   }, [open, itemId]); // Only reset when dialog opens/closes OR itemId changes, not on every item update
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      scheduleInitializedRef.current = false;
+      return;
+    }
+    if (scheduleInitializedRef.current) return;
+
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -135,6 +141,11 @@ export const ContentItemDrawer: React.FC<ContentItemDrawerProps> = ({ itemId, op
     const minutes = String(now.getMinutes()).padStart(2, '0');
     setScheduleDate(`${year}-${month}-${day}`);
     setScheduleTime(`${hours}:${minutes}`);
+    scheduleInitializedRef.current = true;
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
     if (!schedulableChannels.find(c => c.key === scheduleChannel)) {
       const fallback = schedulableChannels[0]?.key;
       if (fallback) {
