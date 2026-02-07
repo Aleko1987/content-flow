@@ -9,7 +9,15 @@ import { processDueScheduledPosts, executePost } from '../scheduled-posts/runner
 const router = Router();
 
 // Type alias for scheduled post from database
-type ScheduledPost = typeof scheduledPosts.$inferSelect;
+type ScheduledPost = typeof scheduledPosts.$inferSelect & {
+  contentItemId?: string | null;
+  channelKey?: string | null;
+};
+
+type ScheduledPostInsert = typeof scheduledPosts.$inferInsert & {
+  contentItemId?: string | null;
+  channelKey?: string | null;
+};
 
 // Validation schemas
 const platformSchema = z.enum(['linkedin', 'x', 'instagram', 'facebook', 'tiktok', 'youtube-shorts']);
@@ -224,7 +232,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       status,
       createdAt: now,
       updatedAt: now,
-    });
+    } as ScheduledPostInsert);
 
     // Insert media items
     if (media.length > 0) {
@@ -275,7 +283,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const now = new Date();
 
     // Build update object (no mediaIds - derived from scheduled_post_media)
-    const updates: Partial<typeof scheduledPosts.$inferInsert> = {
+    const updates: Partial<ScheduledPostInsert> = {
       updatedAt: now,
     };
     

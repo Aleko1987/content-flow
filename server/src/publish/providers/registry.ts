@@ -2,7 +2,7 @@ import type { PublishProvider, ProviderKey } from './types.js';
 import { InstagramProvider } from './instagram.js';
 import { XProvider } from './x.js';
 
-const providers: Map<ProviderKey, PublishProvider> = new Map([
+const providers = new Map<ProviderKey, PublishProvider>([
   ['x', new XProvider()],
   ['instagram', new InstagramProvider()],
 ]);

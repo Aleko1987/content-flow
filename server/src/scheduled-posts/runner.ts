@@ -31,7 +31,12 @@ const normalizeText = (caption: string | null | undefined) => {
   return text;
 };
 
-export const executePost = async (post: typeof scheduledPosts.$inferSelect) => {
+type ScheduledPostRecord = typeof scheduledPosts.$inferSelect & {
+  contentItemId?: string | null;
+  channelKey?: string | null;
+};
+
+export const executePost = async (post: ScheduledPostRecord) => {
   const platforms = Array.isArray(post.platforms) ? post.platforms : [];
   const text = normalizeText(post.caption);
   const results: Array<{ providerKey: string; providerRef: string; canonicalUrl?: string }> = [];
