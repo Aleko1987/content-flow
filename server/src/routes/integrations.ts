@@ -448,7 +448,14 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     const debugResponse = await fetch(
       `${graphBase}/debug_token?input_token=${encodeURIComponent(longAccessToken)}&access_token=${encodeURIComponent(appToken)}`
     );
-    const debugData = debugResponse.ok ? await debugResponse.json() : null;
+    const debugData = debugResponse.ok
+      ? await debugResponse.json() as {
+          data?: {
+            scopes?: string[];
+            granular_scopes?: Array<{ scope?: string; target_ids?: string[] }>;
+          };
+        }
+      : null;
     if (debugData) {
       console.log('[Instagram OAuth] debug_token scopes:', debugData?.data?.scopes);
       console.log('[Instagram OAuth] debug_token granular_scopes:', debugData?.data?.granular_scopes);
