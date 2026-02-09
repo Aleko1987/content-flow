@@ -345,6 +345,8 @@ router.post('/instagram/connect/start', asyncHandler(async (req: Request, res: R
     response_type: 'code',
     scope: scopes.join(','),
     state,
+    // Force re-consent so newly added page permissions are actually granted.
+    auth_type: 'rerequest',
   });
 
   const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
@@ -442,6 +444,16 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
       throw new Error('Long-lived token exchange failed: missing access_token');
     }
 
+    const appToken = `${clientId.trim()}|${clientSecret}`;
+    const debugResponse = await fetch(
+      `${graphBase}/debug_token?input_token=${encodeURIComponent(longAccessToken)}&access_token=${encodeURIComponent(appToken)}`
+    );
+    const debugData = debugResponse.ok ? await debugResponse.json() : null;
+    if (debugData) {
+      console.log('[Instagram OAuth] debug_token scopes:', debugData?.data?.scopes);
+      console.log('[Instagram OAuth] debug_token granular_scopes:', debugData?.data?.granular_scopes);
+    }
+
     const pagesResponse = await fetch(`${graphBase}/me/accounts?access_token=${encodeURIComponent(longAccessToken)}`);
     if (!pagesResponse.ok) {
       const errorText = await pagesResponse.text();
@@ -451,7 +463,8 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string }> };
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
-      throw new Error('No Facebook pages found for this account');
+      const scopes = Array.isArray(debugData?.data?.scopes) ? debugData.data.scopes.join(',') : 'unknown';
+      throw new Error(`No Facebook pages found for this account (scopes: ${scopes})`);
     }
 
     let igUserId: string | null = null;
