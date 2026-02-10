@@ -451,6 +451,7 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     const debugData = debugResponse.ok
       ? await debugResponse.json() as {
           data?: {
+            user_id?: string;
             scopes?: string[];
             granular_scopes?: Array<{ scope?: string; target_ids?: string[] }>;
           };
