@@ -457,6 +457,7 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
         }
       : null;
     if (debugData) {
+      console.log('[Instagram OAuth] debug_token user_id:', debugData?.data?.user_id);
       console.log('[Instagram OAuth] debug_token scopes:', debugData?.data?.scopes);
       console.log('[Instagram OAuth] debug_token granular_scopes:', debugData?.data?.granular_scopes);
     }
@@ -471,7 +472,8 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
       const scopes = Array.isArray(debugData?.data?.scopes) ? debugData.data.scopes.join(',') : 'unknown';
-      throw new Error(`No Facebook pages found for this account (scopes: ${scopes})`);
+      const userId = typeof debugData?.data?.user_id === 'string' ? debugData.data.user_id : 'unknown';
+      throw new Error(`No Facebook pages found for this account (user_id: ${userId}, scopes: ${scopes})`);
     }
 
     let igUserId: string | null = null;
