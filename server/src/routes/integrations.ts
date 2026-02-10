@@ -484,9 +484,17 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
       const scopes = Array.isArray(debugData?.data?.scopes) ? debugData.data.scopes.join(',') : 'unknown';
+      const granular = Array.isArray(debugData?.data?.granular_scopes)
+        ? debugData.data.granular_scopes.map(item => item.scope).filter(Boolean).join(',')
+        : 'unknown';
       const userId = typeof debugData?.data?.user_id === 'string' ? debugData.data.user_id : (meData?.id || 'unknown');
       const userName = meData?.name || 'unknown';
-      throw new Error(`No Facebook pages found for this account (user_id: ${userId}, user_name: ${userName}, scopes: ${scopes})`);
+      const pageSummary = pagesData?.data
+        ? pagesData.data.map(item => `${item.name || 'unknown'}:${item.id}`).join('|')
+        : 'none';
+      throw new Error(
+        `No Facebook pages found (user_id:${userId}, user_name:${userName}, scopes:${scopes}, granular:${granular}, pages:${pageSummary})`
+      );
     }
 
     let igUserId: string | null = null;
