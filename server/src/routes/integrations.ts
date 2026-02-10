@@ -462,18 +462,30 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
       console.log('[Instagram OAuth] debug_token granular_scopes:', debugData?.data?.granular_scopes);
     }
 
+    const meResponse = await fetch(
+      `${graphBase}/me?fields=id,name&access_token=${encodeURIComponent(longAccessToken)}`
+    );
+    const meData = meResponse.ok
+      ? await meResponse.json() as { id?: string; name?: string }
+      : null;
+    if (meData) {
+      console.log('[Instagram OAuth] me:', meData);
+    }
+
     const pagesResponse = await fetch(`${graphBase}/me/accounts?access_token=${encodeURIComponent(longAccessToken)}`);
     if (!pagesResponse.ok) {
       const errorText = await pagesResponse.text();
       throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
     }
 
-    const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string }> };
+    const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string; name?: string; tasks?: string[] }> };
+    console.log('[Instagram OAuth] pages response:', pagesData);
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
       const scopes = Array.isArray(debugData?.data?.scopes) ? debugData.data.scopes.join(',') : 'unknown';
-      const userId = typeof debugData?.data?.user_id === 'string' ? debugData.data.user_id : 'unknown';
-      throw new Error(`No Facebook pages found for this account (user_id: ${userId}, scopes: ${scopes})`);
+      const userId = typeof debugData?.data?.user_id === 'string' ? debugData.data.user_id : (meData?.id || 'unknown');
+      const userName = meData?.name || 'unknown';
+      throw new Error(`No Facebook pages found for this account (user_id: ${userId}, user_name: ${userName}, scopes: ${scopes})`);
     }
 
     let igUserId: string | null = null;
