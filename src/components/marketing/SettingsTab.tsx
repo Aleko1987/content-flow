@@ -31,6 +31,8 @@ export const SettingsTab: React.FC = () => {
   const [integrations, setIntegrations] = useState<Array<{ provider: string; status: 'connected' | 'disconnected' }>>([]);
   const [integrationsLoading, setIntegrationsLoading] = useState(false);
   const [connectingProvider, setConnectingProvider] = useState<string | null>(null);
+  const [facebookPage, setFacebookPage] = useState<{ id: string; name?: string | null } | null>(null);
+  const [facebookPageLoading, setFacebookPageLoading] = useState(false);
 
   const refreshIntegrations = useCallback(async () => {
     setIntegrationsLoading(true);
@@ -112,9 +114,11 @@ export const SettingsTab: React.FC = () => {
   }, [toast]);
 
   const handleConfirmFacebookPage = useCallback(async () => {
+    setFacebookPageLoading(true);
     try {
       const data = await apiClient.integrations.getFacebookPage();
       const pageLabel = data.page_name ? `${data.page_name} (${data.page_id})` : data.page_id;
+      setFacebookPage({ id: data.page_id, name: data.page_name });
       toast({
         title: 'Facebook Page connected',
         description: `Page: ${pageLabel}`,
@@ -125,6 +129,8 @@ export const SettingsTab: React.FC = () => {
         description: error instanceof Error ? error.message : 'Unable to load Facebook Page',
         variant: 'destructive',
       });
+    } finally {
+      setFacebookPageLoading(false);
     }
   }, [toast]);
   
@@ -225,12 +231,21 @@ export const SettingsTab: React.FC = () => {
             <Button
               variant="secondary"
               size="sm"
-              disabled={integrationsLoading || getIntegrationStatus('facebook') !== 'connected'}
+              disabled={
+                integrationsLoading ||
+                facebookPageLoading ||
+                getIntegrationStatus('facebook') !== 'connected'
+              }
               onClick={handleConfirmFacebookPage}
             >
-              Confirm Page ID
+              {facebookPageLoading ? 'Checking…' : 'Confirm Page ID'}
             </Button>
           </div>
+          {facebookPage && (
+            <p className="pt-2 text-xs text-muted-foreground">
+              Connected Page: {facebookPage.name ? `${facebookPage.name} (${facebookPage.id})` : facebookPage.id}
+            </p>
+          )}
         </CardContent>
       </Card>
 
