@@ -59,7 +59,11 @@ export const SettingsTab: React.FC = () => {
     const error = params.get('error');
 
     if (provider && success) {
-      const providerLabel = provider === 'instagram' ? 'Instagram' : 'X';
+      const providerLabel = provider === 'instagram'
+        ? 'Instagram'
+        : provider === 'facebook'
+          ? 'Facebook'
+          : 'X';
       if (success === '1') {
         toast({
           title: `${providerLabel} connected`,
@@ -171,6 +175,34 @@ export const SettingsTab: React.FC = () => {
         <CardContent>
           <p className="text-sm text-muted-foreground">
             Connect your X account to enable publishing.
+          </p>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">📘</span>
+              <div>
+                <CardTitle className="text-base">Facebook Pages</CardTitle>
+                <CardDescription className="text-xs">
+                  Status: {integrationsLoading ? 'Loading…' : getIntegrationStatus('facebook')}
+                </CardDescription>
+              </div>
+            </div>
+            <Button
+              variant="outline"
+              disabled={integrationsLoading || connectingProvider === 'facebook'}
+              onClick={() => handleConnect('facebook')}
+            >
+              {getIntegrationStatus('facebook') === 'connected' ? 'Reconnect' : 'Connect'}
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <p className="text-sm text-muted-foreground">
+            Connect your Facebook Page to enable automatic posting.
           </p>
         </CardContent>
       </Card>

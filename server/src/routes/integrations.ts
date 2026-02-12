@@ -21,7 +21,7 @@ type TokenData = Record<string, unknown> & {
 interface OAuthState {
   state: string;
   codeVerifier?: string;
-  provider: 'x' | 'instagram';
+  provider: 'x' | 'instagram' | 'facebook';
   expiresAt: number;
 }
 
@@ -60,6 +60,7 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
   const providers: Array<{ provider: string; status: 'connected' | 'disconnected' }> = [
     { provider: 'x', status: 'disconnected' },
     { provider: 'instagram', status: 'disconnected' },
+    { provider: 'facebook', status: 'disconnected' },
   ];
   
   // Check connection status for each provider
@@ -354,6 +355,49 @@ router.post('/instagram/connect/start', asyncHandler(async (req: Request, res: R
 }));
 
 /**
+ * POST /api/content-ops/integrations/facebook/connect/start
+ * Initiates Facebook OAuth flow for Facebook Pages
+ */
+router.post('/facebook/connect/start', asyncHandler(async (req: Request, res: Response) => {
+  const clientId = process.env.IG_CLIENT_ID;
+  const redirectUri = process.env.FB_REDIRECT_URI;
+
+  if (!clientId || !redirectUri) {
+    const missing = [];
+    if (!clientId) missing.push('IG_CLIENT_ID');
+    if (!redirectUri) missing.push('FB_REDIRECT_URI');
+    return res.status(400).json({
+      error: 'Missing required environment variables',
+      missing,
+    });
+  }
+
+  const state = randomBytes(32).toString('base64url');
+  oauthStates.set(state, {
+    state,
+    provider: 'facebook',
+    expiresAt: Date.now() + 10 * 60 * 1000,
+  });
+
+  const scopes = [
+    'pages_show_list',
+    'pages_read_engagement',
+  ];
+
+  const params = new URLSearchParams({
+    client_id: clientId.trim(),
+    redirect_uri: redirectUri,
+    response_type: 'code',
+    scope: scopes.join(','),
+    state,
+    auth_type: 'rerequest',
+  });
+
+  const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
+  res.json({ url: authUrl });
+}));
+
+/**
  * GET /api/content-ops/integrations/instagram/connect/callback
  * Handles OAuth callback from Facebook for Instagram
  */
@@ -483,6 +527,13 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     console.log('[Instagram OAuth] pages response:', pagesData);
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
+      const permissionsResponse = await fetch(
+        `${graphBase}/me/permissions?access_token=${encodeURIComponent(longAccessToken)}`
+      );
+      if (permissionsResponse.ok) {
+        const permissionsData = await permissionsResponse.json();
+        console.log('[Instagram OAuth] me/permissions:', permissionsData);
+      }
       const scopes = Array.isArray(debugData?.data?.scopes) ? debugData.data.scopes.join(',') : 'unknown';
       const granular = Array.isArray(debugData?.data?.granular_scopes)
         ? debugData.data.granular_scopes.map(item => item.scope).filter(Boolean).join(',')
@@ -493,7 +544,9 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
         ? pagesData.data.map(item => `${item.name || 'unknown'}:${item.id}`).join('|')
         : 'none';
       throw new Error(
-        `No Facebook pages found (user_id:${userId}, user_name:${userName}, scopes:${scopes}, granular:${granular}, pages:${pageSummary})`
+        `No Facebook pages found (user_id:${userId}, user_name:${userName}, scopes:${scopes}, granular:${granular}, pages:${pageSummary}). ` +
+          'This usually means the user does not have Facebook access to any Pages (task access is not enough). ' +
+          'Add the user under Page Settings or Meta Business Suite as a person with Facebook access, then reauthorize.'
       );
     }
 
@@ -540,6 +593,194 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
       null,
       'connected',
       igUserId
+    );
+
+    res.redirect(buildRedirectUrl(true));
+  } catch (error) {
+    const errorMsg = error instanceof Error ? error.message : 'unknown_error';
+    res.redirect(buildRedirectUrl(false, errorMsg));
+  }
+}));
+
+/**
+ * GET /api/content-ops/integrations/facebook/connect/callback
+ * Handles OAuth callback from Facebook for Page access
+ */
+router.get('/facebook/connect/callback', asyncHandler(async (req: Request, res: Response) => {
+  const { state, code, error } = req.query;
+
+  const getAppBaseUrl = () => {
+    const url = process.env.APP_BASE_URL || 'http://localhost:8080';
+    return url.replace(/\/+$/, '');
+  };
+
+  const buildRedirectUrl = (success: boolean, errorMsg?: string) => {
+    const base = getAppBaseUrl();
+    const params = new URLSearchParams({
+      provider: 'facebook',
+      success: success ? '1' : '0',
+    });
+    if (errorMsg) {
+      params.set('error', errorMsg);
+    }
+    return `${base}/?tab=settings&${params.toString()}`;
+  };
+
+  if (error) {
+    return res.redirect(buildRedirectUrl(false, error as string));
+  }
+
+  if (!state || !code) {
+    return res.redirect(buildRedirectUrl(false, 'missing_params'));
+  }
+
+  const stateData = oauthStates.get(state as string);
+  if (!stateData || stateData.expiresAt < Date.now()) {
+    return res.redirect(buildRedirectUrl(false, 'invalid_state'));
+  }
+
+  if (stateData.provider !== 'facebook') {
+    return res.redirect(buildRedirectUrl(false, 'invalid_provider'));
+  }
+
+  oauthStates.delete(state as string);
+
+  const clientId = process.env.IG_CLIENT_ID;
+  const clientSecret = process.env.IG_CLIENT_SECRET;
+  const redirectUri = process.env.FB_REDIRECT_URI;
+
+  if (!clientId || !clientSecret || !redirectUri) {
+    return res.redirect(buildRedirectUrl(false, 'config_missing'));
+  }
+
+  const graphBase = 'https://graph.facebook.com/v19.0';
+
+  try {
+    const tokenParams = new URLSearchParams({
+      client_id: clientId.trim(),
+      redirect_uri: redirectUri,
+      client_secret: clientSecret,
+      code: code as string,
+    });
+
+    const tokenResponse = await fetch(`${graphBase}/oauth/access_token?${tokenParams.toString()}`);
+    if (!tokenResponse.ok) {
+      const errorText = await tokenResponse.text();
+      throw new Error(`Token exchange failed: ${tokenResponse.status} - ${errorText}`);
+    }
+
+    const shortToken = await tokenResponse.json() as { access_token: string; expires_in?: number };
+    if (!shortToken.access_token) {
+      throw new Error('Token exchange failed: missing access_token');
+    }
+
+    const longParams = new URLSearchParams({
+      grant_type: 'fb_exchange_token',
+      client_id: clientId.trim(),
+      client_secret: clientSecret,
+      fb_exchange_token: shortToken.access_token,
+    });
+
+    const longResponse = await fetch(`${graphBase}/oauth/access_token?${longParams.toString()}`);
+    if (!longResponse.ok) {
+      const errorText = await longResponse.text();
+      throw new Error(`Long-lived token exchange failed: ${longResponse.status} - ${errorText}`);
+    }
+
+    const longToken = await longResponse.json() as { access_token: string; expires_in?: number };
+    const longAccessToken = longToken.access_token;
+    if (!longAccessToken) {
+      throw new Error('Long-lived token exchange failed: missing access_token');
+    }
+
+    const appToken = `${clientId.trim()}|${clientSecret}`;
+    const debugResponse = await fetch(
+      `${graphBase}/debug_token?input_token=${encodeURIComponent(longAccessToken)}&access_token=${encodeURIComponent(appToken)}`
+    );
+    const debugData = debugResponse.ok
+      ? await debugResponse.json() as {
+          data?: {
+            user_id?: string;
+            scopes?: string[];
+            granular_scopes?: Array<{ scope?: string; target_ids?: string[] }>;
+          };
+        }
+      : null;
+    if (debugData) {
+      console.log('[Facebook OAuth] debug_token user_id:', debugData?.data?.user_id);
+      console.log('[Facebook OAuth] debug_token scopes:', debugData?.data?.scopes);
+      console.log('[Facebook OAuth] debug_token granular_scopes:', debugData?.data?.granular_scopes);
+    }
+
+    const meResponse = await fetch(
+      `${graphBase}/me?fields=id,name&access_token=${encodeURIComponent(longAccessToken)}`
+    );
+    const meData = meResponse.ok
+      ? await meResponse.json() as { id?: string; name?: string }
+      : null;
+    if (meData) {
+      console.log('[Facebook OAuth] me:', meData);
+    }
+
+    const pagesResponse = await fetch(`${graphBase}/me/accounts?access_token=${encodeURIComponent(longAccessToken)}`);
+    if (!pagesResponse.ok) {
+      const errorText = await pagesResponse.text();
+      throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
+    }
+
+    const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string; name?: string; tasks?: string[] }> };
+    console.log('[Facebook OAuth] pages response:', pagesData);
+    const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
+    if (pages.length === 0) {
+      const permissionsResponse = await fetch(
+        `${graphBase}/me/permissions?access_token=${encodeURIComponent(longAccessToken)}`
+      );
+      if (permissionsResponse.ok) {
+        const permissionsData = await permissionsResponse.json();
+        console.log('[Facebook OAuth] me/permissions:', permissionsData);
+      }
+      const scopes = Array.isArray(debugData?.data?.scopes) ? debugData.data.scopes.join(',') : 'unknown';
+      const granular = Array.isArray(debugData?.data?.granular_scopes)
+        ? debugData.data.granular_scopes.map(item => item.scope).filter(Boolean).join(',')
+        : 'unknown';
+      const userId = typeof debugData?.data?.user_id === 'string' ? debugData.data.user_id : (meData?.id || 'unknown');
+      const userName = meData?.name || 'unknown';
+      const pageSummary = pagesData?.data
+        ? pagesData.data.map(item => `${item.name || 'unknown'}:${item.id}`).join('|')
+        : 'none';
+      throw new Error(
+        `No Facebook pages found (user_id:${userId}, user_name:${userName}, scopes:${scopes}, granular:${granular}, pages:${pageSummary}). ` +
+          'This usually means the user does not have Facebook access to any Pages (task access is not enough). ' +
+          'Add the user under Page Settings or Meta Business Suite as a person with Facebook access, then reauthorize.'
+      );
+    }
+
+    const selectedPage = pages[0];
+    const pageAccessToken = selectedPage.access_token || longAccessToken;
+    const pageId = selectedPage.id;
+    const pageName = selectedPage.name || null;
+
+    const expiresAt = longToken.expires_in
+      ? Date.now() + (typeof longToken.expires_in === 'number' ? longToken.expires_in : 0) * 1000
+      : undefined;
+
+    const { upsertConnectedAccount } = await import('../db/connectedAccounts.js');
+    await upsertConnectedAccount(
+      'facebook',
+      {
+        access_token: pageAccessToken,
+        page_id: pageId,
+        page_name: pageName,
+        expires_at: expiresAt,
+      },
+      {
+        expires_at: expiresAt,
+        page_id: pageId,
+        page_name: pageName,
+      },
+      null,
+      'connected',
+      pageId
     );
 
     res.redirect(buildRedirectUrl(true));

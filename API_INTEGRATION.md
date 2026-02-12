@@ -202,6 +202,25 @@ curl -X POST http://localhost:3001/api/content-ops/seed-demo
 
 ## MANUAL TEST PLAN
 
+## Instagram/Facebook Page Connection (Automatic Posting)
+
+### Prerequisites
+- Meta App is live and has these permissions approved: `pages_show_list`, `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`
+- App domains include `content-flow-ouru.onrender.com` and `content-flow-frontend.onrender.com`
+- OAuth redirect URI matches: `https://content-flow-ouru.onrender.com/api/content-ops/integrations/instagram/connect/callback`
+- Facebook Pages redirect URI matches: `https://content-flow-ouru.onrender.com/api/content-ops/integrations/facebook/connect/callback` (set `FB_REDIRECT_URI` in Render)
+
+### Required Facebook Page Access
+`/me/accounts` only returns Pages where the user has **Facebook access** (full control). Task access is not enough.
+
+To grant access:
+1. Open Meta Business Suite for the Page.
+2. Go to **Settings > People** (or **Page Settings > Page access** in the new Pages experience).
+3. Add the user as a person with Facebook access (full control).
+4. Re-run the OAuth connect flow so the permissions are re-consented.
+
+If the user cannot open Page Settings or add themselves, an admin of the Page or Business must grant full access first.
+
 ### Setup
 1. Start backend: `cd server && npm run dev`
 2. Start frontend: `npm run dev`
