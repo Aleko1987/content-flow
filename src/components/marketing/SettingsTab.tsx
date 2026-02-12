@@ -110,6 +110,23 @@ export const SettingsTab: React.FC = () => {
       setConnectingProvider(null);
     }
   }, [toast]);
+
+  const handleConfirmFacebookPage = useCallback(async () => {
+    try {
+      const data = await apiClient.integrations.getFacebookPage();
+      const pageLabel = data.page_name ? `${data.page_name} (${data.page_id})` : data.page_id;
+      toast({
+        title: 'Facebook Page connected',
+        description: `Page: ${pageLabel}`,
+      });
+    } catch (error) {
+      toast({
+        title: 'Page confirmation failed',
+        description: error instanceof Error ? error.message : 'Unable to load Facebook Page',
+        variant: 'destructive',
+      });
+    }
+  }, [toast]);
   
   const handleToggleChannel = async (id: string, enabled: boolean) => {
     try {
@@ -204,6 +221,16 @@ export const SettingsTab: React.FC = () => {
           <p className="text-sm text-muted-foreground">
             Connect your Facebook Page to enable automatic posting.
           </p>
+          <div className="pt-3">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={integrationsLoading || getIntegrationStatus('facebook') !== 'connected'}
+              onClick={handleConfirmFacebookPage}
+            >
+              Confirm Page ID
+            </Button>
+          </div>
         </CardContent>
       </Card>
 

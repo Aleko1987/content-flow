@@ -79,6 +79,28 @@ router.get('/', asyncHandler(async (req: Request, res: Response) => {
 }));
 
 /**
+ * GET /api/content-ops/integrations/facebook/page
+ * Returns connected Facebook Page details (id/name) if available
+ */
+router.get('/facebook/page', asyncHandler(async (req: Request, res: Response) => {
+  const account = await getConnectedAccount('facebook');
+  if (!account || account.status !== 'connected') {
+    return res.status(404).json({ error: 'Facebook account not connected' });
+  }
+
+  const tokenData = account.tokenData as { page_id?: string; page_name?: string };
+  const tokenMeta = (account.tokenMeta || {}) as { page_id?: string; page_name?: string };
+  const pageId = tokenMeta.page_id || tokenData.page_id || null;
+  const pageName = tokenMeta.page_name || tokenData.page_name || null;
+
+  if (!pageId) {
+    return res.status(404).json({ error: 'Facebook page id not found' });
+  }
+
+  res.json({ page_id: pageId, page_name: pageName });
+}));
+
+/**
  * POST /api/content-ops/integrations/x/connect/start
  * Initiates OAuth2 PKCE flow for X
  */
