@@ -383,6 +383,7 @@ router.post('/instagram/connect/start', asyncHandler(async (req: Request, res: R
 router.post('/facebook/connect/start', asyncHandler(async (req: Request, res: Response) => {
   const clientId = process.env.IG_CLIENT_ID;
   const redirectUri = process.env.FB_REDIRECT_URI;
+  const configId = process.env.FB_CONFIG_ID;
 
   if (!clientId || !redirectUri) {
     const missing = [];
@@ -414,6 +415,9 @@ router.post('/facebook/connect/start', asyncHandler(async (req: Request, res: Re
     state,
     auth_type: 'rerequest',
   });
+  if (configId) {
+    params.set('config_id', configId.trim());
+  }
 
   const authUrl = `https://www.facebook.com/v19.0/dialog/oauth?${params.toString()}`;
   res.json({ url: authUrl });
