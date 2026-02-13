@@ -149,3 +149,13 @@ export async function upsertConnectedAccount(
   }
 }
 
+/**
+ * Delete connected account for a provider
+ */
+export async function deleteConnectedAccount(provider: string) {
+  await ensureConnectedAccountsTable();
+  await db
+    .delete(connectedAccounts)
+    .where(eq(connectedAccounts.provider, provider));
+}
+

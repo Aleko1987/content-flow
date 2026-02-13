@@ -148,6 +148,10 @@ export const apiClient = {
       fetch(`${API_FULL_URL}/integrations/${provider}/connect/start`, {
         method: 'POST',
       }).then(r => handleResponse<{ url: string }>(r)),
+    disconnect: (provider: string): Promise<{ ok: true }> =>
+      fetch(`${API_FULL_URL}/integrations/${provider}/disconnect`, {
+        method: 'POST',
+      }).then(r => handleResponse<{ ok: true }>(r)),
     getFacebookPage: (): Promise<{ page_id: string; page_name?: string | null }> =>
       fetch(`${API_FULL_URL}/integrations/facebook/page`).then(r =>
         handleResponse<{ page_id: string; page_name?: string | null }>(r)

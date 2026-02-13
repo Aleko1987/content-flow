@@ -133,6 +133,24 @@ export const SettingsTab: React.FC = () => {
       setFacebookPageLoading(false);
     }
   }, [toast]);
+
+  const handleDisconnectFacebook = useCallback(async () => {
+    try {
+      await apiClient.integrations.disconnect('facebook');
+      setFacebookPage(null);
+      toast({
+        title: 'Facebook disconnected',
+        description: 'Facebook and Instagram tokens were removed. Reconnect and choose the correct Page.',
+      });
+      refreshIntegrations();
+    } catch (error) {
+      toast({
+        title: 'Disconnect failed',
+        description: error instanceof Error ? error.message : 'Unable to disconnect Facebook',
+        variant: 'destructive',
+      });
+    }
+  }, [refreshIntegrations, toast]);
   
   const handleToggleChannel = async (id: string, enabled: boolean) => {
     try {
@@ -239,6 +257,15 @@ export const SettingsTab: React.FC = () => {
               onClick={handleConfirmFacebookPage}
             >
               {facebookPageLoading ? 'Checking…' : 'Confirm Page ID'}
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              className="ml-2"
+              disabled={integrationsLoading || getIntegrationStatus('facebook') !== 'connected'}
+              onClick={handleDisconnectFacebook}
+            >
+              Disconnect
             </Button>
           </div>
           {facebookPage && (

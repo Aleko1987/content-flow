@@ -1,12 +1,45 @@
 import { Router, type Request, type Response, type NextFunction } from 'express';
 import { db } from '../db/index.js';
 import { scheduledPosts, scheduledPostMedia, publishTasks, channelVariants, contentItems } from '../db/schema.js';
-import { eq, and, gte, lte, inArray } from 'drizzle-orm';
+import { eq, and, gte, lte, inArray, sql } from 'drizzle-orm';
 import { z } from 'zod';
 import { logger } from '../utils/logger.js';
 import { processDueScheduledPosts, executePost } from '../scheduled-posts/runner.js';
 
 const router = Router();
+let ensureScheduledPostsSchemaPromise: Promise<void> | null = null;
+
+const ensureScheduledPostsSchema = async () => {
+  if (!ensureScheduledPostsSchemaPromise) {
+    ensureScheduledPostsSchemaPromise = (async () => {
+      await db.execute(sql`
+        ALTER TABLE "scheduled_posts"
+        ADD COLUMN IF NOT EXISTS "content_item_id" text
+      `);
+      await db.execute(sql`
+        ALTER TABLE "scheduled_posts"
+        ADD COLUMN IF NOT EXISTS "channel_key" varchar(50)
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS "scheduled_posts_content_item_channel_key_unique"
+        ON "scheduled_posts" ("content_item_id", "channel_key")
+      `);
+    })().catch((error) => {
+      ensureScheduledPostsSchemaPromise = null;
+      throw error;
+    });
+  }
+  await ensureScheduledPostsSchemaPromise;
+};
+
+router.use(async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    await ensureScheduledPostsSchema();
+    next();
+  } catch (error) {
+    next(error);
+  }
+});
 
 // Type alias for scheduled post from database
 type ScheduledPost = typeof scheduledPosts.$inferSelect & {

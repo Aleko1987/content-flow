@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { asyncHandler } from '../middleware/error-handler.js';
 import type { Request, Response } from 'express';
-import { getConnectedAccount } from '../db/connectedAccounts.js';
+import { deleteConnectedAccount, getConnectedAccount } from '../db/connectedAccounts.js';
 import { createHash, randomBytes } from 'crypto';
 
 const router = Router();
@@ -98,6 +98,16 @@ router.get('/facebook/page', asyncHandler(async (req: Request, res: Response) =>
   }
 
   res.json({ page_id: pageId, page_name: pageName });
+}));
+
+/**
+ * POST /api/content-ops/integrations/facebook/disconnect
+ * Disconnects the currently connected Facebook account
+ */
+router.post('/facebook/disconnect', asyncHandler(async (_req: Request, res: Response) => {
+  await deleteConnectedAccount('facebook');
+  await deleteConnectedAccount('instagram');
+  res.json({ ok: true });
 }));
 
 /**
