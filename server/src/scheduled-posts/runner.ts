@@ -62,7 +62,24 @@ export const executePost = async (post: ScheduledPostRecord) => {
     postedToAny = true;
   }
 
-  const unsupported = platforms.filter(p => p !== 'x');
+  if (platforms.includes('facebook')) {
+    const account = await getConnectedAccount('facebook');
+    if (!account || account.status !== 'connected') {
+      throw new Error('No connected Facebook account found');
+    }
+    const provider = getProvider('facebook');
+    const result = await provider.postText(text, account.tokenData);
+    const normalized: ProviderResult =
+      typeof result === 'string' ? { providerRef: result } : result;
+    results.push({
+      providerKey: 'facebook',
+      providerRef: normalized.providerRef,
+      canonicalUrl: normalized.canonicalUrl,
+    });
+    postedToAny = true;
+  }
+
+  const unsupported = platforms.filter(p => p !== 'x' && p !== 'facebook');
   if (unsupported.length > 0) {
     logger.warn(`Scheduled post ${post.id} has unsupported platforms: ${unsupported.join(', ')}`);
   }

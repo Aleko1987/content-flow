@@ -32,5 +32,5 @@ export interface PublishProvider {
   postImage?: (params: ImagePostParams, tokenData: { access_token: string; [key: string]: unknown }) => Promise<string | ProviderResult>;
 }
 
-export type ProviderKey = 'x' | 'instagram';
+export type ProviderKey = 'x' | 'instagram' | 'facebook';
 
