@@ -48,6 +48,12 @@ IG_CLIENT_ID=
 IG_CLIENT_SECRET=
 IG_REDIRECT_URI=http://localhost:3001/api/content-ops/integrations/instagram/connect/callback
 
+# Facebook Pages OAuth
+FB_REDIRECT_URI=http://localhost:3001/api/content-ops/integrations/facebook/connect/callback
+
+# Optional: lock integrations to one Facebook Page ID
+FB_PAGE_ID=
+
 # App base URL used for OAuth redirects (frontend)
 APP_BASE_URL=http://localhost:8080
 ```

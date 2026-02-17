@@ -17,6 +17,13 @@ type TokenData = Record<string, unknown> & {
   scope?: string;
 };
 
+type FacebookPageRecord = {
+  id: string;
+  access_token?: string;
+  name?: string;
+  tasks?: string[];
+};
+
 // In-memory store for OAuth state (v1 - TTL 10 minutes)
 interface OAuthState {
   state: string;
@@ -26,6 +33,36 @@ interface OAuthState {
 }
 
 const oauthStates = new Map<string, OAuthState>();
+
+const getPreferredFacebookPageId = (): string | null => {
+  const value = process.env.FB_PAGE_ID;
+  const trimmed = typeof value === 'string' ? value.trim() : '';
+  return trimmed.length > 0 ? trimmed : null;
+};
+
+const selectFacebookPage = (
+  pages: FacebookPageRecord[],
+  preferredPageId: string | null
+): FacebookPageRecord => {
+  if (pages.length === 0) {
+    throw new Error('No Facebook pages found');
+  }
+
+  if (!preferredPageId) {
+    return pages[0];
+  }
+
+  const selectedPage = pages.find((page) => page.id === preferredPageId);
+  if (selectedPage) {
+    return selectedPage;
+  }
+
+  const availablePages = pages.map((page) => `${page.name || 'unknown'}:${page.id}`).join('|');
+  throw new Error(
+    `Configured FB_PAGE_ID (${preferredPageId}) is not in authorized pages (${availablePages}). ` +
+      'Reconnect Facebook and select the EarthCure page during consent.'
+  );
+};
 
 // Cleanup expired states every 5 minutes
 setInterval(() => {
@@ -560,7 +597,7 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
       throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
     }
 
-    const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string; name?: string; tasks?: string[] }> };
+    const pagesData = await pagesResponse.json() as { data?: FacebookPageRecord[] };
     console.log('[Instagram OAuth] pages response:', pagesData);
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
@@ -587,11 +624,16 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
       );
     }
 
+    const preferredPageId = getPreferredFacebookPageId();
+    const pagesToCheck = preferredPageId
+      ? [selectFacebookPage(pages, preferredPageId)]
+      : pages;
+
     let igUserId: string | null = null;
     let pageAccessToken: string | null = null;
     let pageId: string | null = null;
 
-    for (const page of pages) {
+    for (const page of pagesToCheck) {
       const candidateToken = page.access_token || longAccessToken;
       const igResponse = await fetch(`${graphBase}/${page.id}?fields=instagram_business_account&access_token=${encodeURIComponent(candidateToken)}`);
       if (!igResponse.ok) {
@@ -765,7 +807,7 @@ router.get('/facebook/connect/callback', asyncHandler(async (req: Request, res: 
       throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
     }
 
-    const pagesData = await pagesResponse.json() as { data?: Array<{ id: string; access_token?: string; name?: string; tasks?: string[] }> };
+    const pagesData = await pagesResponse.json() as { data?: FacebookPageRecord[] };
     console.log('[Facebook OAuth] pages response:', pagesData);
     const pages = Array.isArray(pagesData.data) ? pagesData.data : [];
     if (pages.length === 0) {
@@ -792,7 +834,7 @@ router.get('/facebook/connect/callback', asyncHandler(async (req: Request, res: 
       );
     }
 
-    const selectedPage = pages[0];
+    const selectedPage = selectFacebookPage(pages, getPreferredFacebookPageId());
     const pageAccessToken = selectedPage.access_token || longAccessToken;
     const pageId = selectedPage.id;
     const pageName = selectedPage.name || null;
