@@ -48,6 +48,15 @@ export const executePost = async (post: ScheduledPostRecord) => {
   }
 
   let postedToAny = false;
+  let cachedMedia: Array<typeof scheduledPostMedia.$inferSelect> | null = null;
+  const getMedia = async () => {
+    if (cachedMedia) return cachedMedia;
+    cachedMedia = await db
+      .select()
+      .from(scheduledPostMedia)
+      .where(eq(scheduledPostMedia.scheduledPostId, post.id));
+    return cachedMedia;
+  };
 
   if (platforms.includes('x')) {
     const account = await getConnectedAccount('x');
@@ -68,7 +77,17 @@ export const executePost = async (post: ScheduledPostRecord) => {
       throw new Error('No connected Facebook account found');
     }
     const provider = getProvider('facebook');
-    const result = await provider.postText(text, account.tokenData);
+    let result: string | ProviderResult;
+
+    // If an uploaded image is attached, publish as a photo post so the image displays.
+    const media = await getMedia();
+    const image = media.find((m) => String(m.type) === 'image') || null;
+    const imageUrl = image?.storageUrl || null;
+    if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
+      result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+    } else {
+      result = await provider.postText(text, account.tokenData);
+    }
     const normalized: ProviderResult =
       typeof result === 'string' ? { providerRef: result } : result;
     results.push({
@@ -89,10 +108,7 @@ export const executePost = async (post: ScheduledPostRecord) => {
       throw new Error('Instagram provider does not support image publishing');
     }
 
-    const media = await db
-      .select()
-      .from(scheduledPostMedia)
-      .where(eq(scheduledPostMedia.scheduledPostId, post.id));
+    const media = await getMedia();
     const image = media.find((m) => String(m.type) === 'image') || null;
     const imageUrl = image?.storageUrl || null;
 
