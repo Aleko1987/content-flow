@@ -49,6 +49,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const [postingNow, setPostingNow] = useState(false);
 
   const instagramSelected = platforms.includes('instagram');
+  const whatsappSelected = platforms.includes('whatsapp_status');
   const hasUploadedInstagramImage = media.some(
     (m) => m.type === 'image' && typeof m.storageUrl === 'string' && m.storageUrl.startsWith('http')
   );
@@ -220,6 +221,11 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
           <div>
             <Label>Platforms</Label>
             <PlatformMultiSelect value={platforms} onChange={setPlatforms} />
+            {whatsappSelected && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                WhatsApp Status is assisted (manual publish). At publish time we’ll send the caption + media to your WhatsApp via Cloud API.
+              </p>
+            )}
           </div>
 
           <div>

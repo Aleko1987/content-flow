@@ -1,5 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { useContentOps } from '@/contexts/ContentOpsContext';
+import { apiClient } from '@/lib/api-client';
+import { useToast } from '@/hooks/use-toast';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import {
@@ -33,11 +35,13 @@ const channelColors: Record<ChannelKey, string> = {
 };
 
 export const PublishQueueTab: React.FC = () => {
-  const { getTasks, updateTask, createLog } = useContentOps();
+  const { getTasks, updateTask, createLog, refreshTasks, refreshLogs } = useContentOps();
+  const { toast } = useToast();
   const [selectedTask, setSelectedTask] = useState<PublishTaskWithDetails | null>(null);
   const [showLogModal, setShowLogModal] = useState(false);
   const [showWhatsAppGuide, setShowWhatsAppGuide] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [sendingWhatsAppTaskId, setSendingWhatsAppTaskId] = useState<string | null>(null);
   const [logData, setLogData] = useState({
     postUrl: '',
     notes: '',
@@ -63,6 +67,23 @@ export const PublishQueueTab: React.FC = () => {
     await navigator.clipboard.writeText(text);
     setCopied(type);
     setTimeout(() => setCopied(null), 2000);
+  };
+
+  const handleSendWhatsApp = async (task: PublishTaskWithDetails) => {
+    setSendingWhatsAppTaskId(task.id);
+    try {
+      const result = await apiClient.whatsapp.sendStatus(task.id);
+      toast({
+        title: 'Sent to WhatsApp',
+        description: result.messageId ? `Message id: ${result.messageId}` : 'Message sent',
+      });
+      await Promise.all([refreshTasks(), refreshLogs()]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to send to WhatsApp';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setSendingWhatsAppTaskId(null);
+    }
   };
   
   const groupedTasks = useMemo(() => {
@@ -160,10 +181,14 @@ export const PublishQueueTab: React.FC = () => {
               Instructions
             </Button>
           </div>
+          <p className="text-xs text-muted-foreground mb-4">
+            WhatsApp Status is assisted (manual publish). We can message you the caption + media; you still post the status in WhatsApp.
+          </p>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {whatsappDueTasks.map(task => {
               const variant = task.variant;
               const mediaAsset = variant?.mediaAssetId ? { publicUrl: '' } : null; // TODO: Load media asset
+              const alreadySent = !!task.providerRef;
               return (
                 <div
                   key={task.id}
@@ -175,17 +200,33 @@ export const PublishQueueTab: React.FC = () => {
                       <Badge variant="outline" className="mt-1">
                         {task.channelKey}
                       </Badge>
+                      {alreadySent && (
+                        <Badge variant="outline" className="mt-1 ml-2 bg-green-500/15 text-green-600 border-green-500/30">
+                          Sent
+                        </Badge>
+                      )}
                     </div>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedTask(task);
-                        setShowLogModal(true);
-                      }}
-                    >
-                      Mark Posted
-                    </Button>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={alreadySent || sendingWhatsAppTaskId === task.id}
+                        onClick={() => handleSendWhatsApp(task)}
+                        title={alreadySent ? 'Already sent' : 'Send caption + media to WhatsApp'}
+                      >
+                        {alreadySent ? 'Sent to WhatsApp' : (sendingWhatsAppTaskId === task.id ? 'Sending…' : 'Send to WhatsApp')}
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedTask(task);
+                          setShowLogModal(true);
+                        }}
+                      >
+                        Mark Posted
+                      </Button>
+                    </div>
                   </div>
                   
                   {variant && (

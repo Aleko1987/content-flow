@@ -140,6 +140,19 @@ export interface ApiIntegrationsResponse {
 }
 
 export const apiClient = {
+  // WhatsApp (assisted/manual workflows)
+  whatsapp: {
+    sendStatus: (publishTaskId: string, options?: { force?: boolean }): Promise<{ ok: true; alreadySent?: boolean; messageId: string }> =>
+      fetch(`${API_FULL_URL}/whatsapp/send-status`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          publish_task_id: publishTaskId,
+          force: options?.force === true,
+        }),
+      }).then(r => handleResponse<{ ok: true; alreadySent?: boolean; messageId: string }>(r)),
+  },
+
   // Integrations
   integrations: {
     getAll: (): Promise<ApiIntegrationsResponse> =>

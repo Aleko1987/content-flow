@@ -5,6 +5,7 @@ import { getConnectedAccount } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
 import { logger } from '../utils/logger.js';
 import type { ProviderResult } from '../publish/providers/types.js';
+import { sendWhatsAppAssistedStatus } from '../whatsapp/status-service.js';
 
 const ENABLED = process.env.SCHEDULED_POSTS_ENABLED !== 'false';
 const INTERVAL_MS = Number(process.env.SCHEDULED_POSTS_INTERVAL_MS ?? 60_000);
@@ -125,7 +126,28 @@ export const executePost = async (post: ScheduledPostRecord) => {
     postedToAny = true;
   }
 
-  const unsupported = platforms.filter(p => p !== 'x' && p !== 'facebook' && p !== 'instagram');
+  if (platforms.includes('whatsapp_status')) {
+    const media = await getMedia();
+    const best = media.find((m) => String(m.type) === 'image') || media.find((m) => String(m.type) === 'video') || null;
+    const mediaUrl = best?.storageUrl || null;
+    if (!mediaUrl || mediaUrl.startsWith('blob:')) {
+      throw new Error(
+        'WhatsApp Status assisted send requires an uploaded media URL. Add an image/video and wait for upload to finish.'
+      );
+    }
+
+    const result = await sendWhatsAppAssistedStatus({
+      text,
+      mediaUrl,
+      mimeType: best?.mimeType || null,
+    });
+    results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
+    postedToAny = true;
+  }
+
+  const unsupported = platforms.filter(
+    (p) => p !== 'x' && p !== 'facebook' && p !== 'instagram' && p !== 'whatsapp_status'
+  );
   if (unsupported.length > 0) {
     logger.warn(`Scheduled post ${post.id} has unsupported platforms: ${unsupported.join(', ')}`);
   }

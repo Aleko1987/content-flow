@@ -5,6 +5,7 @@ export type ContentPillar = 'product' | 'educational' | 'proof' | 'meme' | 'offe
 export type ContentFormat = 'post' | 'reel' | 'short' | 'carousel' | 'article' | 'ad';
 export type Priority = 1 | 2 | 3; // 1=high, 2=normal, 3=low
 export type PublishState = 'todo' | 'scheduled' | 'posted' | 'skipped';
+export type PublishTaskRunStatus = 'pending' | 'queued' | 'running' | 'success' | 'failed' | 'retryable_failed';
 export type ChannelKey = 'x' | 'instagram' | 'facebook' | 'linkedin' | 'youtube' | 'website_blog' | 'whatsapp_status';
 
 export interface Channel {
@@ -66,6 +67,11 @@ export interface PublishTask {
   channelKey: ChannelKey;
   scheduledFor: Date | null;
   state: PublishState;
+  // Execution/run tracking (for automated + assisted workflows)
+  status?: PublishTaskRunStatus;
+  providerRef?: string | null;
+  attempts?: number;
+  lastError?: string | null;
   assignee: string | null;
   checklist: string[];
   createdAt: Date;

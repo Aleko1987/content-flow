@@ -4,7 +4,14 @@ export type ScheduledPostStatus = 'planned' | 'queued' | 'published' | 'failed';
 
 import type { ChannelKey } from './content-ops';
 
-export type Platform = 'linkedin' | 'x' | 'instagram' | 'facebook' | 'tiktok' | 'youtube_shorts';
+export type Platform =
+  | 'linkedin'
+  | 'x'
+  | 'instagram'
+  | 'facebook'
+  | 'tiktok'
+  | 'youtube_shorts'
+  | 'whatsapp_status';
 
 export interface MediaItem {
   id: string;
@@ -59,4 +66,5 @@ export const PLATFORMS: { key: Platform; label: string; icon: string }[] = [
   { key: 'facebook', label: 'Facebook', icon: '📘' },
   { key: 'tiktok', label: 'TikTok', icon: '🎵' },
   { key: 'youtube_shorts', label: 'YouTube Shorts', icon: '▶️' },
+  { key: 'whatsapp_status', label: 'WhatsApp Status (assisted)', icon: '💬' },
 ];

@@ -53,7 +53,19 @@ type ScheduledPostInsert = typeof scheduledPosts.$inferInsert & {
 };
 
 // Validation schemas
-const platformSchema = z.enum(['linkedin', 'x', 'instagram', 'facebook', 'tiktok', 'youtube-shorts']);
+// Note: frontend uses `youtube_shorts` (underscore). Accept legacy `youtube-shorts` and normalize.
+const platformSchema = z
+  .union([
+    z.literal('linkedin'),
+    z.literal('x'),
+    z.literal('instagram'),
+    z.literal('facebook'),
+    z.literal('tiktok'),
+    z.literal('youtube_shorts'),
+    z.literal('youtube-shorts'),
+    z.literal('whatsapp_status'),
+  ])
+  .transform((value) => (value === 'youtube-shorts' ? 'youtube_shorts' : value));
 const statusSchema = z.enum(['planned', 'queued', 'published', 'failed']);
 
 const mediaItemSchema = z.object({

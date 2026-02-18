@@ -7,6 +7,7 @@ import type { Request, Response } from 'express';
 import { sha256 } from '../utils/crypto.js';
 import { getConnectedAccount } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
+import { sendWhatsAppStatusForPublishTask } from '../whatsapp/status-service.js';
 
 const router = Router();
 
@@ -491,6 +492,34 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
   const task = result.task;
 
   try {
+    // Assisted WhatsApp Status workflow (manual publish via message to self).
+    if (task.channelKey === 'whatsapp_status') {
+      // Write publish_log for provider.request
+      await db.insert(publishLogs).values({
+        id: generateId(),
+        publishTaskId: task.id,
+        postedAt: new Date(),
+        postUrl: null,
+        reach: null,
+        clicks: null,
+        notes: `provider.request - provider: whatsapp_cloud_api, channel: whatsapp_status`,
+      });
+
+      const sendResult = await sendWhatsAppStatusForPublishTask({ publishTaskId: task.id, force: true });
+
+      const updatedTask = await db
+        .select()
+        .from(publishTasks)
+        .where(eq(publishTasks.id, task.id))
+        .limit(1);
+
+      return res.json({
+        task: updatedTask[0],
+        providerRef: sendResult.messageId,
+        alreadySent: sendResult.alreadySent,
+      });
+    }
+
     // Get channel variant to determine provider
     const [variant] = await db
       .select()

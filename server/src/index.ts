@@ -14,6 +14,7 @@ import mediaRouter from './routes/media.js';
 import seedRouter from './routes/seed.js';
 import scheduledPostsRouter from './routes/scheduled-posts.js';
 import integrationsRouter from './routes/integrations.js';
+import whatsappRouter from './routes/whatsapp.js';
 import { startScheduledPostRunner } from './scheduled-posts/runner.js';
 
 // Load environment variables
@@ -83,6 +84,9 @@ app.use('/api/content-ops/scheduled-posts', scheduledPostsRouter);
 
 // Integrations API (OAuth connections)
 app.use('/api/content-ops/integrations', integrationsRouter);
+
+// WhatsApp assisted workflow (manual status posting helper)
+app.use('/api/content-ops/whatsapp', whatsappRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);

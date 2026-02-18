@@ -74,16 +74,26 @@ function toCamelCaseVariant(obj: any): ChannelVariant {
 }
 
 function toCamelCaseTask(obj: any): PublishTask {
+  const contentItemId = obj.content_item_id ?? obj.contentItemId;
+  const channelKey = obj.channel_key ?? obj.channelKey;
+  const scheduledFor = obj.scheduled_for ?? obj.scheduledFor;
+  const createdAt = obj.created_at ?? obj.createdAt;
+  const updatedAt = obj.updated_at ?? obj.updatedAt;
+
   return {
     id: obj.id,
-    contentItemId: obj.content_item_id,
-    channelKey: obj.channel_key as ChannelKey,
-    scheduledFor: obj.scheduled_for ? new Date(obj.scheduled_for) : null,
+    contentItemId: contentItemId,
+    channelKey: channelKey as ChannelKey,
+    scheduledFor: scheduledFor ? new Date(scheduledFor) : null,
     state: obj.state as PublishState,
+    status: (obj.status ?? obj.run_status ?? obj.task_status) as any,
+    providerRef: obj.provider_ref ?? obj.providerRef ?? null,
+    attempts: typeof obj.attempts === 'number' ? obj.attempts : undefined,
+    lastError: obj.last_error ?? obj.lastError ?? null,
     assignee: obj.assignee,
     checklist: obj.checklist || [],
-    createdAt: new Date(obj.created_at),
-    updatedAt: new Date(obj.updated_at),
+    createdAt: new Date(createdAt),
+    updatedAt: new Date(updatedAt),
   };
 }
 
