@@ -10,6 +10,7 @@ interface MediaDropzoneProps {
   value: MediaItem[];
   onChange: (media: MediaItem[]) => void;
   disabled?: boolean;
+  normalizeForInstagram?: boolean;
 }
 
 // Generate UUID
@@ -25,6 +26,7 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
   value,
   onChange,
   disabled = false,
+  normalizeForInstagram = false,
 }) => {
   const { toast } = useToast();
   const [isDragging, setIsDragging] = useState(false);
@@ -64,8 +66,71 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
     return null;
   };
 
+  const IG_MIN_ASPECT = 0.8;  // 4:5
+  const IG_MAX_ASPECT = 1.91; // ~1.91:1
+
+  const normalizeImageForInstagram = useCallback(async (file: File): Promise<File> => {
+    // Only normalize real images; videos are not handled here.
+    if (!file.type.startsWith('image/')) return file;
+
+    // If browser can't decode it, just upload as-is and let IG error.
+    let bitmap: ImageBitmap | null = null;
+    try {
+      bitmap = await createImageBitmap(file);
+    } catch {
+      return file;
+    }
+
+    const width = bitmap.width;
+    const height = bitmap.height;
+    const aspect = width / height;
+
+    if (aspect >= IG_MIN_ASPECT && aspect <= IG_MAX_ASPECT) {
+      bitmap.close();
+      return file;
+    }
+
+    // Auto-crop to square (1:1) which is always accepted.
+    const cropSize = Math.min(width, height);
+    const sx = Math.floor((width - cropSize) / 2);
+    const sy = Math.floor((height - cropSize) / 2);
+    const targetSize = 1080; // good default for IG feed
+
+    const canvas = document.createElement('canvas');
+    canvas.width = targetSize;
+    canvas.height = targetSize;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) {
+      bitmap.close();
+      return file;
+    }
+
+    ctx.drawImage(bitmap, sx, sy, cropSize, cropSize, 0, 0, targetSize, targetSize);
+    bitmap.close();
+
+    const blob: Blob = await new Promise((resolve, reject) => {
+      canvas.toBlob(
+        (b) => (b ? resolve(b) : reject(new Error('Failed to encode image'))),
+        'image/jpeg',
+        0.92
+      );
+    });
+
+    const nextName = file.name.replace(/\.[^.]+$/, '') + '_ig.jpg';
+    return new File([blob], nextName, { type: 'image/jpeg' });
+  }, []);
+
   const uploadFileToStorage = useCallback(async (file: File) => {
-    const presign = await apiClient.media.presign(file.name, file.type);
+    const normalizedFile = normalizeForInstagram ? await normalizeImageForInstagram(file) : file;
+
+    if (normalizeForInstagram && normalizedFile !== file) {
+      toast({
+        title: 'Adjusted for Instagram',
+        description: 'Image was auto-cropped to a square to meet Instagram aspect ratio requirements.',
+      });
+    }
+
+    const presign = await apiClient.media.presign(normalizedFile.name, normalizedFile.type);
     if (!presign.uploadUrl) {
       throw new Error('Media upload failed: missing uploadUrl');
     }
@@ -78,9 +143,9 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
     const putResponse = await fetch(presign.uploadUrl, {
       method: 'PUT',
       headers: {
-        'Content-Type': file.type,
+        'Content-Type': normalizedFile.type,
       },
-      body: file,
+      body: normalizedFile,
     });
     if (!putResponse.ok) {
       throw new Error(`Media upload failed: ${putResponse.status} ${putResponse.statusText}`);
@@ -90,13 +155,13 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
     const created = await apiClient.media.create({
       key: presign.key,
       url: presign.publicUrl,
-      filename: file.name,
-      contentType: file.type,
-      size: file.size,
+      filename: normalizedFile.name,
+      contentType: normalizedFile.type,
+      size: normalizedFile.size,
     });
 
     return created.url;
-  }, []);
+  }, [normalizeForInstagram, normalizeImageForInstagram, toast]);
 
   const updateItem = useCallback((id: string, patch: Partial<MediaItem>) => {
     const current = valueRef.current;

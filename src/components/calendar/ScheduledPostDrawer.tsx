@@ -224,7 +224,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
 
           <div>
             <Label>Media</Label>
-            <MediaDropzone value={media} onChange={setMedia} />
+            <MediaDropzone value={media} onChange={setMedia} normalizeForInstagram={instagramSelected} />
             {instagramSelected && !hasUploadedInstagramImage && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Instagram requires an uploaded image with a public URL. Add an image and wait for upload to finish before posting.
