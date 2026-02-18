@@ -122,7 +122,15 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
       const now = new Date();
       const scheduledDate = formatLocalDate(now);
       const scheduledTime = formatLocalTime(now);
-      await scheduledPostApiService.update(post.id, { scheduledDate, scheduledTime });
+      // IMPORTANT: persist current form state before executing, otherwise "Post Now"
+      // can publish with stale platforms/media from the previously saved record.
+      await scheduledPostApiService.update(post.id, {
+        scheduledDate,
+        scheduledTime,
+        caption,
+        platforms,
+        media,
+      });
       const result = await scheduledPostApiService.executeNow(post.id);
       if (result.status === 'failed') {
         toast({ title: 'Failed to post', description: 'Publish failed. Check Render logs for details.', variant: 'destructive' });
