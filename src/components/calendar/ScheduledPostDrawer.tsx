@@ -48,6 +48,15 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const [saving, setSaving] = useState(false);
   const [postingNow, setPostingNow] = useState(false);
 
+  const instagramSelected = platforms.includes('instagram');
+  const hasUploadedInstagramImage = media.some(
+    (m) => m.type === 'image' && typeof m.storageUrl === 'string' && m.storageUrl.startsWith('http')
+  );
+  const hasLocalButNotUploadedImage = media.some(
+    (m) => m.type === 'image' && !!m.localObjectUrl && (!m.storageUrl || !m.storageUrl.startsWith('http'))
+  );
+  const blockInstagramPostNow = instagramSelected && (!hasUploadedInstagramImage || hasLocalButNotUploadedImage);
+
   const formatLocalDate = (value: Date) => {
     const year = value.getFullYear();
     const month = String(value.getMonth() + 1).padStart(2, '0');
@@ -119,6 +128,15 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     if (!post) return;
     setPostingNow(true);
     try {
+      if (blockInstagramPostNow) {
+        toast({
+          title: 'Upload still in progress',
+          description: 'Instagram needs a public image URL. Wait for the upload to finish, then try Post Now again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+
       const now = new Date();
       const scheduledDate = formatLocalDate(now);
       const scheduledTime = formatLocalTime(now);
@@ -207,13 +225,18 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
           <div>
             <Label>Media</Label>
             <MediaDropzone value={media} onChange={setMedia} />
+            {instagramSelected && !hasUploadedInstagramImage && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Instagram requires an uploaded image with a public URL. Add an image and wait for upload to finish before posting.
+              </p>
+            )}
           </div>
         </div>
 
         <SheetFooter className="flex gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           {post && (
-            <Button variant="secondary" onClick={handlePostNow} disabled={saving || postingNow}>
+            <Button variant="secondary" onClick={handlePostNow} disabled={saving || postingNow || blockInstagramPostNow}>
               {postingNow ? 'Posting...' : 'Post Now'}
             </Button>
           )}
