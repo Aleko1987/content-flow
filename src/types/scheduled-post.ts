@@ -12,8 +12,8 @@ export interface MediaItem {
   fileName: string;
   mimeType: string;
   size: number;
-  localObjectUrl: string; // For preview (frontend only)
-  storageUrl?: string; // If persisted to storage
+  localObjectUrl?: string; // For preview (frontend only; may be missing for persisted media)
+  storageUrl?: string; // Publicly accessible URL (required for IG publish)
 }
 
 export interface ScheduledPost {

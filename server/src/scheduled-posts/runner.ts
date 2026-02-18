@@ -1,6 +1,6 @@
 import { and, eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { scheduledPosts, contentItems } from '../db/schema.js';
+import { scheduledPosts, scheduledPostMedia, contentItems } from '../db/schema.js';
 import { getConnectedAccount } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
 import { logger } from '../utils/logger.js';
@@ -79,7 +79,37 @@ export const executePost = async (post: ScheduledPostRecord) => {
     postedToAny = true;
   }
 
-  const unsupported = platforms.filter(p => p !== 'x' && p !== 'facebook');
+  if (platforms.includes('instagram')) {
+    const account = await getConnectedAccount('instagram');
+    if (!account || account.status !== 'connected') {
+      throw new Error('No connected Instagram account found');
+    }
+    const provider = getProvider('instagram');
+    if (!provider.postImage) {
+      throw new Error('Instagram provider does not support image publishing');
+    }
+
+    const media = await db
+      .select()
+      .from(scheduledPostMedia)
+      .where(eq(scheduledPostMedia.scheduledPostId, post.id));
+    const image = media.find((m) => String(m.type) === 'image') || null;
+    const imageUrl = image?.storageUrl || null;
+
+    if (!imageUrl || imageUrl.startsWith('blob:')) {
+      throw new Error(
+        'Instagram publishing requires an uploaded image with a public URL. Add an image in the post and wait for upload to finish.'
+      );
+    }
+
+    const result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+    const normalized: ProviderResult =
+      typeof result === 'string' ? { providerRef: result } : result;
+    results.push({ providerKey: 'instagram', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
+    postedToAny = true;
+  }
+
+  const unsupported = platforms.filter(p => p !== 'x' && p !== 'facebook' && p !== 'instagram');
   if (unsupported.length > 0) {
     logger.warn(`Scheduled post ${post.id} has unsupported platforms: ${unsupported.join(', ')}`);
   }

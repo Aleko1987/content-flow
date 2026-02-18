@@ -1,9 +1,10 @@
-import React, { useCallback, useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useToast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
-import { Upload, X, Image as ImageIcon, Film, AlertCircle } from 'lucide-react';
+import { Upload, X, Image as ImageIcon, Film } from 'lucide-react';
 import { FILE_LIMITS, type MediaItem } from '@/types/scheduled-post';
 import { cn } from '@/lib/utils';
+import { apiClient } from '@/lib/api-client';
 
 interface MediaDropzoneProps {
   value: MediaItem[];
@@ -27,6 +28,11 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
 }) => {
   const { toast } = useToast();
   const [isDragging, setIsDragging] = useState(false);
+  const valueRef = useRef(value);
+
+  useEffect(() => {
+    valueRef.current = value;
+  }, [value]);
 
   // Cleanup object URLs on unmount or when media changes
   useEffect(() => {
@@ -58,9 +64,51 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
     return null;
   };
 
+  const uploadFileToStorage = useCallback(async (file: File) => {
+    const presign = await apiClient.media.presign(file.name, file.type);
+    if (!presign.uploadUrl) {
+      throw new Error('Media upload failed: missing uploadUrl');
+    }
+    if (!presign.publicUrl) {
+      // Instagram requires a public image_url; without this we can’t publish.
+      throw new Error('Media upload is not configured (missing public URL)');
+    }
+
+    // Upload file directly to storage (R2) via presigned URL.
+    const putResponse = await fetch(presign.uploadUrl, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': file.type,
+      },
+      body: file,
+    });
+    if (!putResponse.ok) {
+      throw new Error(`Media upload failed: ${putResponse.status} ${putResponse.statusText}`);
+    }
+
+    // Persist media asset metadata in DB (so it can be reused elsewhere).
+    const created = await apiClient.media.create({
+      key: presign.key,
+      url: presign.publicUrl,
+      filename: file.name,
+      contentType: file.type,
+      size: file.size,
+    });
+
+    return created.url;
+  }, []);
+
+  const updateItem = useCallback((id: string, patch: Partial<MediaItem>) => {
+    const current = valueRef.current;
+    onChange(
+      current.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    );
+  }, [onChange]);
+
   const processFiles = useCallback((files: FileList | File[]) => {
     const fileArray = Array.from(files);
     const newMedia: MediaItem[] = [];
+    const uploadQueue: Array<{ item: MediaItem; file: File }> = [];
     const errors: string[] = [];
 
     fileArray.forEach(file => {
@@ -71,15 +119,17 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
       }
 
       const isImage = FILE_LIMITS.ALLOWED_IMAGE_TYPES.includes(file.type);
-      
-      newMedia.push({
+      const item: MediaItem = {
         id: generateId(),
         type: isImage ? 'image' : 'video',
         fileName: file.name,
         mimeType: file.type,
         size: file.size,
         localObjectUrl: URL.createObjectURL(file),
-      });
+      };
+      
+      newMedia.push(item);
+      uploadQueue.push({ item, file });
     });
 
     if (errors.length > 0) {
@@ -91,9 +141,26 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
     }
 
     if (newMedia.length > 0) {
-      onChange([...value, ...newMedia]);
+      const next = [...valueRef.current, ...newMedia];
+      onChange(next);
+
+      // Upload in background and patch each item with storageUrl.
+      for (const { item, file } of uploadQueue) {
+        uploadFileToStorage(file)
+          .then((storageUrl) => {
+            updateItem(item.id, { storageUrl });
+          })
+          .catch((err) => {
+            console.error('Media upload failed:', err);
+            toast({
+              title: 'Upload failed',
+              description: err instanceof Error ? err.message : 'Failed to upload media',
+              variant: 'destructive',
+            });
+          });
+      }
     }
-  }, [value, onChange, toast]);
+  }, [onChange, toast, updateItem, uploadFileToStorage]);
 
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
