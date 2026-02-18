@@ -40,6 +40,10 @@ const getPreferredFacebookPageId = (): string | null => {
   return trimmed.length > 0 ? trimmed : null;
 };
 
+const summarizeAuthorizedPages = (pages: FacebookPageRecord[]) => {
+  return pages.map((page) => `${page.name || 'unknown'}:${page.id}`).join('|');
+};
+
 const selectFacebookPage = (
   pages: FacebookPageRecord[],
   preferredPageId: string | null
@@ -57,10 +61,59 @@ const selectFacebookPage = (
     return selectedPage;
   }
 
-  const availablePages = pages.map((page) => `${page.name || 'unknown'}:${page.id}`).join('|');
+  const availablePages = summarizeAuthorizedPages(pages);
   throw new Error(
     `Configured FB_PAGE_ID (${preferredPageId}) is not in authorized pages (${availablePages}). ` +
       'Reconnect Facebook and select the EarthCure page during consent.'
+  );
+};
+
+const tryFetchPageToken = async (
+  graphBase: string,
+  pageId: string,
+  userAccessToken: string
+): Promise<FacebookPageRecord | null> => {
+  // If the user has sufficient access, this returns a page access token even when /me/accounts
+  // is empty due to granular-scopes/business config oddities.
+  const response = await fetch(
+    `${graphBase}/${encodeURIComponent(pageId)}?fields=id,name,access_token&access_token=${encodeURIComponent(userAccessToken)}`
+  );
+  if (!response.ok) {
+    return null;
+  }
+  const data = (await response.json()) as { id?: string; name?: string; access_token?: string };
+  if (!data?.id || !data?.access_token) {
+    return null;
+  }
+  return { id: data.id, name: data.name, access_token: data.access_token };
+};
+
+const resolveFacebookPage = async (
+  graphBase: string,
+  pages: FacebookPageRecord[],
+  preferredPageId: string | null,
+  userAccessToken: string
+): Promise<FacebookPageRecord> => {
+  if (!preferredPageId) {
+    return selectFacebookPage(pages, null);
+  }
+
+  const inList = pages.find((page) => page.id === preferredPageId);
+  if (inList) {
+    return inList;
+  }
+
+  const fetched = await tryFetchPageToken(graphBase, preferredPageId, userAccessToken);
+  if (fetched) {
+    console.log('[Facebook OAuth] resolved page via direct lookup:', { id: fetched.id, name: fetched.name });
+    return fetched;
+  }
+
+  const availablePages = summarizeAuthorizedPages(pages);
+  throw new Error(
+    `Configured FB_PAGE_ID (${preferredPageId}) is not in authorized pages (${availablePages}). ` +
+      'If you are using a Facebook Business config (config_id), remove it and reauthorize. ' +
+      'Also confirm you are continuing OAuth as the correct Facebook user (not a different profile).'
   );
 };
 
@@ -625,9 +678,10 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
     }
 
     const preferredPageId = getPreferredFacebookPageId();
-    const pagesToCheck = preferredPageId
-      ? [selectFacebookPage(pages, preferredPageId)]
-      : pages;
+    const resolvedPreferred = preferredPageId
+      ? await resolveFacebookPage(graphBase, pages, preferredPageId, longAccessToken)
+      : null;
+    const pagesToCheck = resolvedPreferred ? [resolvedPreferred] : pages;
 
     let igUserId: string | null = null;
     let pageAccessToken: string | null = null;
@@ -834,7 +888,7 @@ router.get('/facebook/connect/callback', asyncHandler(async (req: Request, res: 
       );
     }
 
-    const selectedPage = selectFacebookPage(pages, getPreferredFacebookPageId());
+    const selectedPage = await resolveFacebookPage(graphBase, pages, getPreferredFacebookPageId(), longAccessToken);
     const pageAccessToken = selectedPage.access_token || longAccessToken;
     const pageId = selectedPage.id;
     const pageName = selectedPage.name || null;
