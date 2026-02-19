@@ -4,6 +4,11 @@ interface FacebookFeedResponse {
   id?: string;
 }
 
+interface FacebookPostDetailsResponse {
+  permalink_url?: string;
+  is_published?: boolean;
+}
+
 interface FacebookPhotoResponse {
   id?: string; // photo id
   post_id?: string; // pageId_postId (when published to feed)
@@ -11,6 +16,24 @@ interface FacebookPhotoResponse {
 
 export class FacebookProvider implements PublishProvider {
   private readonly apiBaseUrl = 'https://graph.facebook.com/v19.0';
+
+  private async tryFetchPermalink(
+    objectId: string,
+    accessToken: string
+  ): Promise<{ permalinkUrl?: string; isPublished?: boolean } | null> {
+    try {
+      const params = new URLSearchParams({
+        fields: 'permalink_url,is_published',
+        access_token: accessToken,
+      });
+      const response = await fetch(`${this.apiBaseUrl}/${encodeURIComponent(objectId)}?${params.toString()}`);
+      if (!response.ok) return null;
+      const data = (await response.json()) as FacebookPostDetailsResponse;
+      return { permalinkUrl: data.permalink_url, isPublished: data.is_published };
+    } catch {
+      return null;
+    }
+  }
 
   async postText(
     text: string,
@@ -47,10 +70,16 @@ export class FacebookProvider implements PublishProvider {
       throw new Error('Invalid Facebook response: missing post id');
     }
 
+    const details = await this.tryFetchPermalink(data.id, accessToken);
+    if (details?.isPublished === false) {
+      throw new Error('Facebook created an unpublished post. Check Page settings and permissions.');
+    }
+
     const postIdParts = data.id.split('_');
-    const canonicalUrl = postIdParts.length === 2
+    const fallbackCanonicalUrl = postIdParts.length === 2
       ? `https://www.facebook.com/${postIdParts[0]}/posts/${postIdParts[1]}`
       : undefined;
+    const canonicalUrl = details?.permalinkUrl || fallbackCanonicalUrl;
 
     return {
       providerRef: data.id,
@@ -75,42 +104,69 @@ export class FacebookProvider implements PublishProvider {
       throw new Error('Missing imageUrl for Facebook photo post');
     }
 
-    // Publish a photo to the Page feed using a public image URL.
+    // IMPORTANT:
+    // Posting directly to /{pageId}/photos can yield a "photo object URL" (photo?fbid=...)
+    // that admins can open, but some non-admin viewers cannot (Facebook error: content isn't available).
+    //
+    // To reliably create a public Page feed post with an image, use:
+    // 1) upload photo as unpublished (published=false) -> get photo id (media_fbid)
+    // 2) create a feed post with attached_media -> get post id (pageId_postId)
     // https://developers.facebook.com/docs/graph-api/reference/page/photos/
-    const response = await fetch(`${this.apiBaseUrl}/${pageId}/photos`, {
+    // https://developers.facebook.com/docs/graph-api/reference/page/feed/
+    const uploadResponse = await fetch(`${this.apiBaseUrl}/${pageId}/photos`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/x-www-form-urlencoded',
-      },
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
       body: new URLSearchParams({
         url: params.imageUrl,
-        caption: params.caption || '',
-        published: 'true',
+        // Keep caption on the feed post (message) so the feed story is canonical.
+        caption: '',
+        published: 'false',
         access_token: accessToken,
       }),
     });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Facebook photo post failed: ${response.status} ${errorText}`);
+    if (!uploadResponse.ok) {
+      const errorText = await uploadResponse.text();
+      throw new Error(`Facebook photo upload failed: ${uploadResponse.status} ${errorText}`);
+    }
+    const uploadData = (await uploadResponse.json()) as FacebookPhotoResponse;
+    const photoId = uploadData.id;
+    if (!photoId) {
+      throw new Error('Invalid Facebook photo upload response: missing id');
     }
 
-    const data = (await response.json()) as FacebookPhotoResponse;
-    const providerRef = data.post_id || data.id;
-    if (!providerRef) {
-      throw new Error('Invalid Facebook photo response: missing id/post_id');
+    const feedBody = new URLSearchParams({
+      message: params.caption || '',
+      access_token: accessToken,
+    });
+    // Graph expects JSON in the attached_media param.
+    feedBody.set('attached_media[0]', JSON.stringify({ media_fbid: photoId }));
+
+    const feedResponse = await fetch(`${this.apiBaseUrl}/${pageId}/feed`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: feedBody,
+    });
+    if (!feedResponse.ok) {
+      const errorText = await feedResponse.text();
+      throw new Error(`Facebook feed post failed: ${feedResponse.status} ${errorText}`);
+    }
+    const feedData = (await feedResponse.json()) as { id?: string };
+    if (!feedData.id) {
+      throw new Error('Invalid Facebook feed response: missing post id');
     }
 
-    // Prefer canonical URL based on post_id if present (looks like {pageId}_{postId}).
-    const postIdParts = data.post_id ? data.post_id.split('_') : [];
-    const canonicalUrl = postIdParts.length === 2
+    const details = await this.tryFetchPermalink(feedData.id, accessToken);
+    if (details?.isPublished === false) {
+      throw new Error('Facebook created an unpublished feed post. Check Page settings and permissions.');
+    }
+
+    const postIdParts = feedData.id.split('_');
+    const fallbackCanonicalUrl = postIdParts.length === 2
       ? `https://www.facebook.com/${postIdParts[0]}/posts/${postIdParts[1]}`
-      : (data.id ? `https://www.facebook.com/photo/?fbid=${data.id}` : undefined);
+      : undefined;
+    const canonicalUrl = details?.permalinkUrl || fallbackCanonicalUrl;
 
-    return {
-      providerRef,
-      canonicalUrl,
-    };
+    return { providerRef: feedData.id, canonicalUrl };
   }
 }
 

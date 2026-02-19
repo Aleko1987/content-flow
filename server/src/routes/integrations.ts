@@ -53,7 +53,16 @@ const selectFacebookPage = (
   }
 
   if (!preferredPageId) {
-    return pages[0];
+    // Avoid silently picking the "first" page when the user manages multiple Pages.
+    // This is the most common reason "posting works" but the user can't find it.
+    if (pages.length === 1) {
+      return pages[0];
+    }
+    const availablePages = summarizeAuthorizedPages(pages);
+    throw new Error(
+      'Multiple Facebook pages are authorized but FB_PAGE_ID is not set. ' +
+        `Set FB_PAGE_ID to the Page you want to post to and reconnect. Authorized pages: ${availablePages}`
+    );
   }
 
   const selectedPage = pages.find((page) => page.id === preferredPageId);
@@ -100,7 +109,19 @@ const resolveFacebookPage = async (
 
   const inList = pages.find((page) => page.id === preferredPageId);
   if (inList) {
-    return inList;
+    // /me/accounts may omit access_token unless `fields=...access_token` is requested.
+    // Ensure we always end up with a Page access token for publishing.
+    if (inList.access_token) {
+      return inList;
+    }
+    const fetched = await tryFetchPageToken(graphBase, preferredPageId, userAccessToken);
+    if (fetched) {
+      return { ...inList, ...fetched };
+    }
+    throw new Error(
+      `Facebook Page ${preferredPageId} was found but no page access token was returned. ` +
+        'Confirm the OAuth scopes include pages_show_list and the Facebook user has Facebook access (full control) to the Page, then reconnect.'
+    );
   }
 
   const fetched = await tryFetchPageToken(graphBase, preferredPageId, userAccessToken);
@@ -644,7 +665,9 @@ router.get('/instagram/connect/callback', asyncHandler(async (req: Request, res:
       console.log('[Instagram OAuth] me:', meData);
     }
 
-    const pagesResponse = await fetch(`${graphBase}/me/accounts?access_token=${encodeURIComponent(longAccessToken)}`);
+    const pagesResponse = await fetch(
+      `${graphBase}/me/accounts?fields=id,name,access_token,tasks&access_token=${encodeURIComponent(longAccessToken)}`
+    );
     if (!pagesResponse.ok) {
       const errorText = await pagesResponse.text();
       throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
@@ -855,7 +878,9 @@ router.get('/facebook/connect/callback', asyncHandler(async (req: Request, res: 
       console.log('[Facebook OAuth] me:', meData);
     }
 
-    const pagesResponse = await fetch(`${graphBase}/me/accounts?access_token=${encodeURIComponent(longAccessToken)}`);
+    const pagesResponse = await fetch(
+      `${graphBase}/me/accounts?fields=id,name,access_token,tasks&access_token=${encodeURIComponent(longAccessToken)}`
+    );
     if (!pagesResponse.ok) {
       const errorText = await pagesResponse.text();
       throw new Error(`Failed to list pages: ${pagesResponse.status} - ${errorText}`);
