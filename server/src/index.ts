@@ -69,6 +69,14 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Some Meta crawlers respect robots.txt; keep it permissive for compliance checks.
+app.get('/robots.txt', (_req: Request, res: Response) => {
+  res
+    .status(200)
+    .type('text/plain')
+    .send('User-agent: *\nAllow: /\n');
+});
+
 // Root landing page (Meta "Site URL" requires a reachable 200)
 app.get('/', (_req: Request, res: Response) => {
   res
