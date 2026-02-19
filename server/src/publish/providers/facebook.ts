@@ -86,12 +86,14 @@ export class FacebookProvider implements PublishProvider {
       throw new Error('Facebook created an unpublished post. Check Page settings and permissions.');
     }
 
-    const stablePermalink = this.buildStablePermalinkFromCompositeId(data.id);
     const postIdParts = data.id.split('_');
     const legacyFallbackUrl = postIdParts.length === 2
       ? `https://www.facebook.com/${postIdParts[0]}/posts/${postIdParts[1]}`
       : undefined;
-    const canonicalUrl = stablePermalink || details?.permalinkUrl || legacyFallbackUrl;
+    const stablePermalink = this.buildStablePermalinkFromCompositeId(data.id);
+    // Prefer Graph-provided permalink_url first. It can be a pfbid-based URL that resolves
+    // better across viewers than permalink.php or /{pageId}/posts/{postId}.
+    const canonicalUrl = details?.permalinkUrl || stablePermalink || legacyFallbackUrl;
 
     return {
       providerRef: data.id,
@@ -172,12 +174,12 @@ export class FacebookProvider implements PublishProvider {
       throw new Error('Facebook created an unpublished feed post. Check Page settings and permissions.');
     }
 
-    const stablePermalink = this.buildStablePermalinkFromCompositeId(feedData.id);
     const postIdParts = feedData.id.split('_');
     const legacyFallbackUrl = postIdParts.length === 2
       ? `https://www.facebook.com/${postIdParts[0]}/posts/${postIdParts[1]}`
       : undefined;
-    const canonicalUrl = stablePermalink || details?.permalinkUrl || legacyFallbackUrl;
+    const stablePermalink = this.buildStablePermalinkFromCompositeId(feedData.id);
+    const canonicalUrl = details?.permalinkUrl || stablePermalink || legacyFallbackUrl;
 
     return { providerRef: feedData.id, canonicalUrl };
   }
