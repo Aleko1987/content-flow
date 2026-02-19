@@ -69,6 +69,30 @@ app.get('/health', (req: Request, res: Response) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Root landing page (Meta "Site URL" requires a reachable 200)
+app.get('/', (_req: Request, res: Response) => {
+  res
+    .status(200)
+    .type('html')
+    .send(`<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Content Flow API</title>
+  </head>
+  <body style="font-family: Arial, sans-serif; line-height: 1.5; padding: 24px; max-width: 900px;">
+    <h1>Content Flow API</h1>
+    <p>This service powers Content Flow integrations.</p>
+    <ul>
+      <li><a href="/healthz">/healthz</a></li>
+      <li><a href="/privacy">/privacy</a></li>
+      <li><a href="/data-deletion">/data-deletion</a></li>
+    </ul>
+  </body>
+</html>`);
+});
+
 // Public compliance pages (required to take Meta apps Live)
 app.get('/privacy', (_req: Request, res: Response) => {
   res
