@@ -17,6 +17,17 @@ interface FacebookPhotoResponse {
 export class FacebookProvider implements PublishProvider {
   private readonly apiBaseUrl = 'https://graph.facebook.com/v19.0';
 
+  private buildStablePermalinkFromCompositeId(compositeId: string): string | null {
+    // Graph feed post ids are typically "{pageId}_{postId}".
+    const parts = compositeId.split('_');
+    if (parts.length !== 2) return null;
+    const [pageId, postId] = parts;
+    if (!pageId || !postId) return null;
+    // This format tends to be more robust than "/{pageId}/posts/{postId}" and avoids
+    // cases where Graph returns a permalink_url pointing at a different numeric id.
+    return `https://www.facebook.com/permalink.php?story_fbid=${encodeURIComponent(postId)}&id=${encodeURIComponent(pageId)}`;
+  }
+
   private async tryFetchPermalink(
     objectId: string,
     accessToken: string
@@ -75,11 +86,12 @@ export class FacebookProvider implements PublishProvider {
       throw new Error('Facebook created an unpublished post. Check Page settings and permissions.');
     }
 
+    const stablePermalink = this.buildStablePermalinkFromCompositeId(data.id);
     const postIdParts = data.id.split('_');
-    const fallbackCanonicalUrl = postIdParts.length === 2
+    const legacyFallbackUrl = postIdParts.length === 2
       ? `https://www.facebook.com/${postIdParts[0]}/posts/${postIdParts[1]}`
       : undefined;
-    const canonicalUrl = details?.permalinkUrl || fallbackCanonicalUrl;
+    const canonicalUrl = stablePermalink || details?.permalinkUrl || legacyFallbackUrl;
 
     return {
       providerRef: data.id,
@@ -160,11 +172,12 @@ export class FacebookProvider implements PublishProvider {
       throw new Error('Facebook created an unpublished feed post. Check Page settings and permissions.');
     }
 
+    const stablePermalink = this.buildStablePermalinkFromCompositeId(feedData.id);
     const postIdParts = feedData.id.split('_');
-    const fallbackCanonicalUrl = postIdParts.length === 2
+    const legacyFallbackUrl = postIdParts.length === 2
       ? `https://www.facebook.com/${postIdParts[0]}/posts/${postIdParts[1]}`
       : undefined;
-    const canonicalUrl = details?.permalinkUrl || fallbackCanonicalUrl;
+    const canonicalUrl = stablePermalink || details?.permalinkUrl || legacyFallbackUrl;
 
     return { providerRef: feedData.id, canonicalUrl };
   }
