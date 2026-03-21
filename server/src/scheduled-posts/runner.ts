@@ -1,7 +1,7 @@
 import { and, eq, lte } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { scheduledPosts, scheduledPostMedia, contentItems } from '../db/schema.js';
-import { getConnectedAccount } from '../db/connectedAccounts.js';
+import { getConnectedAccount, setConnectedAccountStatus } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
 import { logger } from '../utils/logger.js';
 import type { ProviderResult } from '../publish/providers/types.js';
@@ -30,6 +30,49 @@ const markStatus = async (id: string, status: string) => {
 const normalizeText = (caption: string | null | undefined) => {
   const text = (caption ?? '').trim();
   return text;
+};
+
+const getErrorMessage = (error: unknown) => {
+  return error instanceof Error ? error.message : String(error);
+};
+
+const isMetaAccessTokenExpired = (message: string) => {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes('error validating access token') ||
+    normalized.includes('session has expired') ||
+    normalized.includes('code":190') ||
+    normalized.includes('code:190') ||
+    normalized.includes('invalid oauth access token') ||
+    normalized.includes('access token has expired')
+  );
+};
+
+const toFriendlyPublishError = async (
+  platform: 'facebook' | 'instagram' | 'whatsapp_status',
+  error: unknown
+) => {
+  const message = getErrorMessage(error);
+  if (!isMetaAccessTokenExpired(message)) {
+    return error instanceof Error ? error : new Error(message);
+  }
+
+  if (platform === 'whatsapp_status') {
+    return new Error(
+      'WhatsApp Cloud API session expired. Update WA_ACCESS_TOKEN in your server environment, restart the API, then try again.'
+    );
+  }
+
+  try {
+    await setConnectedAccountStatus(platform, 'revoked');
+  } catch (statusError) {
+    logger.warn(`Failed to mark ${platform} integration as revoked: ${getErrorMessage(statusError)}`);
+  }
+
+  const providerLabel = platform === 'facebook' ? 'Facebook' : 'Instagram';
+  return new Error(
+    `${providerLabel} session expired. Reconnect ${providerLabel} in Settings > Integrations, then retry this post.`
+  );
 };
 
 type ScheduledPostRecord = typeof scheduledPosts.$inferSelect & {
@@ -78,25 +121,29 @@ export const executePost = async (post: ScheduledPostRecord) => {
       throw new Error('No connected Facebook account found');
     }
     const provider = getProvider('facebook');
-    let result: string | ProviderResult;
+    try {
+      let result: string | ProviderResult;
 
-    // If an uploaded image is attached, publish as a photo post so the image displays.
-    const media = await getMedia();
-    const image = media.find((m) => String(m.type) === 'image') || null;
-    const imageUrl = image?.storageUrl || null;
-    if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
-      result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
-    } else {
-      result = await provider.postText(text, account.tokenData);
+      // If an uploaded image is attached, publish as a photo post so the image displays.
+      const media = await getMedia();
+      const image = media.find((m) => String(m.type) === 'image') || null;
+      const imageUrl = image?.storageUrl || null;
+      if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
+        result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+      } else {
+        result = await provider.postText(text, account.tokenData);
+      }
+      const normalized: ProviderResult =
+        typeof result === 'string' ? { providerRef: result } : result;
+      results.push({
+        providerKey: 'facebook',
+        providerRef: normalized.providerRef,
+        canonicalUrl: normalized.canonicalUrl,
+      });
+      postedToAny = true;
+    } catch (error) {
+      throw await toFriendlyPublishError('facebook', error);
     }
-    const normalized: ProviderResult =
-      typeof result === 'string' ? { providerRef: result } : result;
-    results.push({
-      providerKey: 'facebook',
-      providerRef: normalized.providerRef,
-      canonicalUrl: normalized.canonicalUrl,
-    });
-    postedToAny = true;
   }
 
   if (platforms.includes('instagram')) {
@@ -119,11 +166,15 @@ export const executePost = async (post: ScheduledPostRecord) => {
       );
     }
 
-    const result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
-    const normalized: ProviderResult =
-      typeof result === 'string' ? { providerRef: result } : result;
-    results.push({ providerKey: 'instagram', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
-    postedToAny = true;
+    try {
+      const result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+      const normalized: ProviderResult =
+        typeof result === 'string' ? { providerRef: result } : result;
+      results.push({ providerKey: 'instagram', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
+      postedToAny = true;
+    } catch (error) {
+      throw await toFriendlyPublishError('instagram', error);
+    }
   }
 
   if (platforms.includes('whatsapp_status')) {
@@ -136,13 +187,17 @@ export const executePost = async (post: ScheduledPostRecord) => {
       );
     }
 
-    const result = await sendWhatsAppAssistedStatus({
-      text,
-      mediaUrl,
-      mimeType: best?.mimeType || null,
-    });
-    results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
-    postedToAny = true;
+    try {
+      const result = await sendWhatsAppAssistedStatus({
+        text,
+        mediaUrl,
+        mimeType: best?.mimeType || null,
+      });
+      results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
+      postedToAny = true;
+    } catch (error) {
+      throw await toFriendlyPublishError('whatsapp_status', error);
+    }
   }
 
   const unsupported = platforms.filter(

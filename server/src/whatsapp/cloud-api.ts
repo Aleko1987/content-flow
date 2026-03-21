@@ -10,6 +10,20 @@ type WhatsAppConfig = {
   apiVersion: string;
 };
 
+type WhatsAppApiErrorPayload = {
+  error?: {
+    message?: string;
+    type?: string;
+    code?: number;
+    error_subcode?: number;
+    error_data?: {
+      details?: string;
+      messaging_product?: string;
+    };
+    fbtrace_id?: string;
+  };
+};
+
 const requiredEnv = (key: string): string => {
   const value = process.env[key];
   if (!value || !value.trim()) {
@@ -37,6 +51,48 @@ const parseMessageId = (data: any): string | null => {
   return typeof id === 'string' && id.trim() ? id : null;
 };
 
+const shortJson = (value: unknown, maxLength = 280): string => {
+  try {
+    const json = JSON.stringify(value);
+    if (json.length <= maxLength) return json;
+    return `${json.slice(0, maxLength)}...`;
+  } catch {
+    return '[unserializable]';
+  }
+};
+
+const buildWhatsAppApiErrorMessage = (
+  status: number,
+  payload: WhatsAppApiErrorPayload,
+  requestBody: unknown
+) => {
+  const apiError = payload?.error || {};
+  const parts: string[] = [`WhatsApp Cloud API error HTTP ${status}`];
+
+  if (typeof apiError.code === 'number') {
+    parts.push(`code=${apiError.code}`);
+  }
+  if (typeof apiError.error_subcode === 'number') {
+    parts.push(`subcode=${apiError.error_subcode}`);
+  }
+  if (typeof apiError.type === 'string' && apiError.type.trim()) {
+    parts.push(`type=${apiError.type}`);
+  }
+  if (typeof apiError.message === 'string' && apiError.message.trim()) {
+    parts.push(`message=${apiError.message}`);
+  }
+  if (typeof apiError.error_data?.details === 'string' && apiError.error_data.details.trim()) {
+    parts.push(`details=${apiError.error_data.details}`);
+  }
+  if (typeof apiError.fbtrace_id === 'string' && apiError.fbtrace_id.trim()) {
+    parts.push(`fbtrace_id=${apiError.fbtrace_id}`);
+  }
+
+  // Add request context so invalid-parameter cases are diagnosable from UI logs.
+  parts.push(`request=${shortJson(requestBody)}`);
+  return parts.join(' | ');
+};
+
 const waFetch = async (config: WhatsAppConfig, body: unknown): Promise<WhatsAppSendResult> => {
   const url = `https://graph.facebook.com/${encodeURIComponent(config.apiVersion)}/${encodeURIComponent(config.phoneNumberId)}/messages`;
   const response = await fetch(url, {
@@ -48,13 +104,9 @@ const waFetch = async (config: WhatsAppConfig, body: unknown): Promise<WhatsAppS
     body: JSON.stringify(body),
   });
 
-  const data = await response.json().catch(() => ({}));
+  const data = (await response.json().catch(() => ({}))) as WhatsAppApiErrorPayload;
   if (!response.ok) {
-    const message =
-      typeof (data as any)?.error?.message === 'string'
-        ? (data as any).error.message
-        : `WhatsApp Cloud API error: HTTP ${response.status}`;
-    throw new Error(message);
+    throw new Error(buildWhatsAppApiErrorMessage(response.status, data, body));
   }
 
   const messageId = parseMessageId(data);

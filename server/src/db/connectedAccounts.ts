@@ -159,3 +159,23 @@ export async function deleteConnectedAccount(provider: string) {
     .where(eq(connectedAccounts.provider, provider));
 }
 
+/**
+ * Update connection status for an existing provider account.
+ * Returns true when a row was updated, false when provider was not found.
+ */
+export async function setConnectedAccountStatus(
+  provider: string,
+  status: ConnectedAccountStatus
+) {
+  await ensureConnectedAccountsTable();
+  const updated = await db
+    .update(connectedAccounts)
+    .set({
+      status,
+      updatedAt: sql`now()`,
+    })
+    .where(eq(connectedAccounts.provider, provider))
+    .returning({ id: connectedAccounts.id });
+  return updated.length > 0;
+}
+
