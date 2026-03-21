@@ -248,6 +248,9 @@ router.post('/:id/execute', async (req: Request, res: Response, next: NextFuncti
     res.json({ status: updated?.status ?? post.status, results: result?.results ?? [] });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to execute scheduled post';
+    logger.error(
+      `Manual execute failed for scheduled post ${req.params.id}: ${message}`
+    );
     res.status(400).json({ error: message });
   }
 });
