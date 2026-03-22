@@ -49,6 +49,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const [saving, setSaving] = useState(false);
   const [postingNow, setPostingNow] = useState(false);
   const [sendingVerificationTemplate, setSendingVerificationTemplate] = useState(false);
+  const [sendingConfirmationTemplateTest, setSendingConfirmationTemplateTest] = useState(false);
 
   const instagramSelected = platforms.includes('instagram');
   const whatsappSelected = platforms.includes('whatsapp_status');
@@ -177,6 +178,25 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     setSendingVerificationTemplate(true);
     try {
       const result = await apiClient.whatsapp.sendVerificationTemplate({
+        templateType: 'verification',
+      });
+      toast({
+        title: 'Verification template sent',
+        description: `Sent ${result.templateName} (${result.templateLanguage})`,
+      });
+    } catch (error) {
+      console.error('Verification template send failed:', error);
+      const message = error instanceof Error ? error.message : 'Failed to send verification template';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setSendingVerificationTemplate(false);
+    }
+  };
+
+  const handleSendConfirmationTemplateTest = async () => {
+    setSendingConfirmationTemplateTest(true);
+    try {
+      const result = await apiClient.whatsapp.sendVerificationTemplate({
         templateType: 'confirmation',
         caption,
         scheduledDate: date,
@@ -187,11 +207,11 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
         description: `Sent ${result.templateName} (${result.templateLanguage})`,
       });
     } catch (error) {
-      console.error('Verification template send failed:', error);
+      console.error('Confirmation template test failed:', error);
       const message = error instanceof Error ? error.message : 'Failed to send confirmation template test';
       toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
-      setSendingVerificationTemplate(false);
+      setSendingConfirmationTemplateTest(false);
     }
   };
 
@@ -255,9 +275,20 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
                   variant="outline"
                   size="sm"
                   onClick={handleSendVerificationTemplate}
-                  disabled={saving || postingNow || sendingVerificationTemplate}
+                  disabled={saving || postingNow || sendingVerificationTemplate || sendingConfirmationTemplateTest}
                 >
-                  {sendingVerificationTemplate ? 'Sending confirmation test...' : 'Send confirmation template test'}
+                  {sendingVerificationTemplate ? 'Sending hello_world...' : 'Send hello_world test'}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSendConfirmationTemplateTest}
+                  disabled={saving || postingNow || sendingVerificationTemplate || sendingConfirmationTemplateTest}
+                >
+                  {sendingConfirmationTemplateTest
+                    ? 'Sending confirmation test...'
+                    : 'Send confirmation template test'}
                 </Button>
               </div>
             )}
