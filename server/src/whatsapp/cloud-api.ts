@@ -172,28 +172,38 @@ export const sendWhatsAppTemplate = async (params: {
   name: string;
   language: string;
   bodyText?: string;
-  quickReplyButtons?: Array<{ index: number; payload: string }>;
+  bodyParams?: string[];
+  quickReplyButtons?: Array<{ index: number; payload?: string | null }>;
   recipientPhone?: string | null;
 }): Promise<WhatsAppSendResult> => {
   const config = getWhatsAppConfig();
   const to = resolveRecipientPhone(config, params.recipientPhone);
   const bodyText = (params.bodyText ?? '').trim();
+  const bodyParams = Array.isArray(params.bodyParams)
+    ? params.bodyParams
+        .map((value) => String(value ?? '').trim())
+        .filter(Boolean)
+    : [];
   const buttonComponents =
     Array.isArray(params.quickReplyButtons) && params.quickReplyButtons.length > 0
       ? params.quickReplyButtons
           .filter((button) => Number.isInteger(button.index) && button.index >= 0 && button.index <= 9)
-          .map((button) => ({
-            type: 'button',
-            sub_type: 'quick_reply',
-            index: String(button.index),
-            parameters: [{ type: 'payload', payload: button.payload }],
-          }))
+          .map((button) => {
+            const payload = (button.payload ?? '').trim();
+            return {
+              type: 'button',
+              sub_type: 'quick_reply',
+              index: String(button.index),
+              ...(payload ? { parameters: [{ type: 'payload', payload }] } : {}),
+            };
+          })
       : [];
-  const bodyComponents = bodyText
+  const resolvedBodyParams = bodyParams.length > 0 ? bodyParams : bodyText ? [bodyText] : [];
+  const bodyComponents = resolvedBodyParams.length > 0
     ? [
         {
           type: 'body',
-          parameters: [{ type: 'text', text: bodyText }],
+          parameters: resolvedBodyParams.map((value) => ({ type: 'text', text: value })),
         },
       ]
     : [];

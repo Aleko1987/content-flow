@@ -111,6 +111,25 @@ const getConfirmationTemplateLanguage = () => {
 };
 
 const parseQuickReplyButtons = () => {
+  const buttonMapRaw = (process.env.WA_CONFIRM_BUTTON_PAYLOAD_MAP || '').trim();
+  if (buttonMapRaw) {
+    const mapped = buttonMapRaw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [indexRaw, payloadRaw = ''] = entry.split(':');
+        const index = Number.parseInt((indexRaw || '').trim(), 10);
+        const payload = payloadRaw.trim();
+        if (Number.isNaN(index) || index < 0 || index > 9) return null;
+        return { index, payload };
+      })
+      .filter((entry): entry is { index: number; payload: string } => !!entry);
+    if (mapped.length > 0) {
+      return mapped;
+    }
+  }
+
   const yesPayload = (process.env.WA_CONFIRM_YES_PAYLOAD || '').trim();
   const yesIndexRaw = (process.env.WA_CONFIRM_YES_BUTTON_INDEX || '0').trim();
   const yesIndex = Number.parseInt(yesIndexRaw, 10);
@@ -118,6 +137,34 @@ const parseQuickReplyButtons = () => {
     return [];
   }
   return [{ index: yesIndex, payload: yesPayload }];
+};
+
+const parseBodyParamsTemplate = (captionPreview: string, publishDate: string, publishTime: string) => {
+  const mode = (process.env.WA_CONFIRMATION_BODY_MODE || 'caption').trim().toLowerCase();
+  if (mode === 'none' || mode === '0' || mode === 'off') {
+    return [] as string[];
+  }
+
+  const raw = (process.env.WA_CONFIRMATION_BODY_PARAMS || '').trim();
+  if (!raw) {
+    return [captionPreview];
+  }
+
+  return raw
+    .split('|')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .map((part) =>
+      part
+        .replace(/\{caption\}/gi, captionPreview)
+        .replace(/\{publish_date\}/gi, publishDate)
+        .replace(/\{publish_time\}/gi, publishTime)
+    );
+};
+
+const getTemplateRetryWithoutComponents = () => {
+  const value = (process.env.WA_CONFIRMATION_TEMPLATE_RETRY_PLAIN || 'true').trim().toLowerCase();
+  return value !== 'false' && value !== '0' && value !== 'off' && value !== 'no';
 };
 
 const createPromptPreview = (caption: string) => {
@@ -135,30 +182,43 @@ const normalizeIntentText = (text: string) => {
     .replace(/[!?.;,:'"(){}\[\]]/g, '');
 };
 
+const parseIntentTokens = (raw: string): string[] => {
+  return raw
+    .split(',')
+    .map((value) => normalizeIntentText(value))
+    .filter(Boolean);
+};
+
 export const isAffirmativeReply = (text: string) => {
   const value = normalizeIntentText(text);
   if (!value) return false;
-  return (
-    value === 'yes' ||
-    value === 'y' ||
-    value === 'ok' ||
-    value === 'okay' ||
-    value === 'confirm' ||
-    value === 'confirmed' ||
-    value === 'post' ||
-    value === 'publish' ||
-    value === 'ship it' ||
-    value === 'go live' ||
-    value === 'do it' ||
-    value === '👍' ||
-    value === '👍🏽' ||
-    value === '👍🏿'
-  );
+  const defaults = [
+    'yes',
+    'y',
+    'ok',
+    'okay',
+    'confirm',
+    'confirmed',
+    'post',
+    'publish',
+    'ship it',
+    'go live',
+    'do it',
+    '👍',
+    '👍🏽',
+    '👍🏿',
+  ];
+  const fromEnv = parseIntentTokens((process.env.WA_CONFIRM_AFFIRMATIVE_TOKENS || '').trim());
+  const accepted = new Set([...defaults, ...fromEnv]);
+  return accepted.has(value);
 };
 
 const isNegativeReply = (text: string) => {
   const value = normalizeIntentText(text);
-  return value === 'no' || value === 'n' || value === 'cancel' || value === 'skip';
+  const defaults = ['no', 'n', 'cancel', 'skip'];
+  const fromEnv = parseIntentTokens((process.env.WA_CONFIRM_NEGATIVE_TOKENS || '').trim());
+  const accepted = new Set([...defaults, ...fromEnv]);
+  return accepted.has(value);
 };
 
 export const extractInboundMessagesFromWebhook = (payload: IncomingWebhookPayload) => {
@@ -393,13 +453,43 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   const templateLang = getConfirmationTemplateLanguage();
   const quickReplyButtons = parseQuickReplyButtons();
   const previewText = createPromptPreview(params.caption);
-  const prompt = await sendWhatsAppTemplate({
-    name: templateName,
-    language: templateLang,
-    bodyText: previewText,
-    quickReplyButtons,
-    recipientPhone,
-  });
+  const [scheduledPost] = await db
+    .select({ scheduledAt: scheduledPosts.scheduledAt })
+    .from(scheduledPosts)
+    .where(eq(scheduledPosts.id, params.scheduledPostId))
+    .limit(1);
+  const scheduledDate = scheduledPost?.scheduledAt ? scheduledPost.scheduledAt.toISOString().slice(0, 10) : '';
+  const scheduledTime = scheduledPost?.scheduledAt ? scheduledPost.scheduledAt.toISOString().slice(11, 16) : '';
+  const bodyParams = parseBodyParamsTemplate(previewText, scheduledDate, scheduledTime);
+
+  let prompt;
+  try {
+    prompt = await sendWhatsAppTemplate({
+      name: templateName,
+      language: templateLang,
+      bodyParams,
+      quickReplyButtons,
+      recipientPhone,
+    });
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : String(error);
+    const shouldRetryPlain = getTemplateRetryWithoutComponents();
+    const parameterMismatch = messageText.includes('code=132000');
+    if (!shouldRetryPlain || !parameterMismatch) {
+      throw error;
+    }
+    logger.warn('Retrying confirmation template without components due to parameter mismatch', {
+      scheduledPostId: params.scheduledPostId,
+      templateName,
+      templateLang,
+      reason: messageText,
+    });
+    prompt = await sendWhatsAppTemplate({
+      name: templateName,
+      language: templateLang,
+      recipientPhone,
+    });
+  }
 
   await db.execute(sql`
     INSERT INTO whatsapp_assisted_confirmations (

@@ -60,6 +60,19 @@ CONTENT_FLOW_FORWARD_TOKEN=
 # Optional WhatsApp verification-template button config
 WA_VERIFICATION_TEMPLATE_NAME=hello_world
 WA_VERIFICATION_TEMPLATE_LANGUAGE=en_US
+WA_CONFIRMATION_TEMPLATE_NAME=
+WA_CONFIRMATION_TEMPLATE_LANGUAGE=en_US
+# caption | none
+WA_CONFIRMATION_BODY_MODE=caption
+# Optional explicit body params: {caption}|{publish_date}|{publish_time}
+WA_CONFIRMATION_BODY_PARAMS=
+# Optional payload map for quick-reply button variables
+WA_CONFIRM_BUTTON_PAYLOAD_MAP=
+WA_CONFIRM_YES_PAYLOAD=CF_CONFIRM_YES
+WA_CONFIRM_YES_BUTTON_INDEX=0
+WA_CONFIRMATION_TEMPLATE_RETRY_PLAIN=true
+WA_CONFIRM_AFFIRMATIVE_TOKENS=
+WA_CONFIRM_NEGATIVE_TOKENS=
 
 # App base URL used for OAuth redirects (frontend)
 APP_BASE_URL=http://localhost:8080
