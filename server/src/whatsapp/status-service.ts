@@ -232,24 +232,124 @@ export const sendWhatsAppStatusForPublishTask = async (params: {
   return { alreadySent: false, messageId };
 };
 
-export const sendWhatsAppVerificationTemplate = async (params?: { recipientPhone?: string | null }) => {
+export const sendWhatsAppVerificationTemplate = async (params?: {
+  recipientPhone?: string | null;
+  templateType?: 'verification' | 'confirmation';
+  caption?: string | null;
+  scheduledDate?: string | null;
+  scheduledTime?: string | null;
+}) => {
+  const resolveLanguage = (specific: string | undefined, fallback: string | undefined, defaultValue: string) => {
+    const s = (specific || '').trim();
+    const f = (fallback || '').trim();
+    return s || f || defaultValue;
+  };
+
+  const parseQuickReplyButtons = () => {
+    const buttonMapRaw = (process.env.WA_CONFIRM_BUTTON_PAYLOAD_MAP || '').trim();
+    if (buttonMapRaw) {
+      const mapped = buttonMapRaw
+        .split(',')
+        .map((entry) => entry.trim())
+        .filter(Boolean)
+        .map((entry) => {
+          const [indexRaw, payloadRaw = ''] = entry.split(':');
+          const index = Number.parseInt((indexRaw || '').trim(), 10);
+          const payload = payloadRaw.trim();
+          if (Number.isNaN(index) || index < 0 || index > 9) return null;
+          return { index, payload: payload || null };
+        })
+        .filter((entry): entry is { index: number; payload: string | null } => !!entry);
+      if (mapped.length > 0) {
+        return mapped;
+      }
+    }
+
+    const yesPayload = (process.env.WA_CONFIRM_YES_PAYLOAD || '').trim();
+    const yesIndexRaw = (process.env.WA_CONFIRM_YES_BUTTON_INDEX || '0').trim();
+    const yesIndex = Number.parseInt(yesIndexRaw, 10);
+    if (!yesPayload || Number.isNaN(yesIndex)) {
+      return [] as Array<{ index: number; payload: string | null }>;
+    }
+    return [{ index: yesIndex, payload: yesPayload }];
+  };
+
+  const parseBodyParams = (captionPreview: string, publishDate: string, publishTime: string) => {
+    const mode = (process.env.WA_CONFIRMATION_BODY_MODE || 'caption').trim().toLowerCase();
+    if (mode === 'none' || mode === '0' || mode === 'off') {
+      return [] as string[];
+    }
+
+    const raw = (process.env.WA_CONFIRMATION_BODY_PARAMS || '').trim();
+    if (!raw) {
+      return [captionPreview];
+    }
+
+    return raw
+      .split('|')
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) =>
+        part
+          .replace(/\{caption\}/gi, captionPreview)
+          .replace(/\{publish_date\}/gi, publishDate)
+          .replace(/\{publish_time\}/gi, publishTime)
+      );
+  };
+
+  const templateType = params?.templateType || 'verification';
+  const recipientPhone = params?.recipientPhone ?? null;
+
+  if (templateType === 'confirmation') {
+    const templateName = (process.env.WA_CONFIRMATION_TEMPLATE_NAME || process.env.WA_TEMPLATE_NAME || '').trim();
+    if (!templateName) {
+      throw new Error('WA_CONFIRMATION_TEMPLATE_NAME is required for confirmation template verification');
+    }
+    const templateLanguage = resolveLanguage(
+      process.env.WA_CONFIRMATION_TEMPLATE_LANGUAGE,
+      process.env.WA_TEMPLATE_LANGUAGE,
+      'en_US'
+    );
+    const caption = String(params?.caption || '').trim();
+    const captionPreview = caption || 'Scheduled WhatsApp status post';
+    const scheduledDate = String(params?.scheduledDate || '').trim();
+    const scheduledTime = String(params?.scheduledTime || '').trim();
+    const bodyParams = parseBodyParams(captionPreview, scheduledDate, scheduledTime);
+    const quickReplyButtons = parseQuickReplyButtons();
+
+    const result = await sendWhatsAppTemplate({
+      name: templateName,
+      language: templateLanguage,
+      bodyParams,
+      quickReplyButtons,
+      recipientPhone,
+    });
+
+    return {
+      messageId: result.messageId,
+      templateName,
+      templateLanguage,
+      templateType,
+    };
+  }
+
   const templateName = (process.env.WA_VERIFICATION_TEMPLATE_NAME || 'hello_world').trim();
   const templateLanguage = (process.env.WA_VERIFICATION_TEMPLATE_LANGUAGE || 'en_US').trim();
   if (!templateName) {
     throw new Error('WA_VERIFICATION_TEMPLATE_NAME is required');
   }
 
-  // Intentionally send without body params. This endpoint is only for template setup verification.
   const result = await sendWhatsAppTemplate({
     name: templateName,
     language: templateLanguage,
-    recipientPhone: params?.recipientPhone ?? null,
+    recipientPhone,
   });
 
   return {
     messageId: result.messageId,
     templateName,
     templateLanguage,
+    templateType,
   };
 };
 

@@ -176,14 +176,19 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const handleSendVerificationTemplate = async () => {
     setSendingVerificationTemplate(true);
     try {
-      const result = await apiClient.whatsapp.sendVerificationTemplate();
+      const result = await apiClient.whatsapp.sendVerificationTemplate({
+        templateType: 'confirmation',
+        caption,
+        scheduledDate: date,
+        scheduledTime: time,
+      });
       toast({
-        title: 'Verification template sent',
+        title: 'Confirmation template test sent',
         description: `Sent ${result.templateName} (${result.templateLanguage})`,
       });
     } catch (error) {
       console.error('Verification template send failed:', error);
-      const message = error instanceof Error ? error.message : 'Failed to send verification template';
+      const message = error instanceof Error ? error.message : 'Failed to send confirmation template test';
       toast({ title: 'Error', description: message, variant: 'destructive' });
     } finally {
       setSendingVerificationTemplate(false);
@@ -252,7 +257,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
                   onClick={handleSendVerificationTemplate}
                   disabled={saving || postingNow || sendingVerificationTemplate}
                 >
-                  {sendingVerificationTemplate ? 'Sending template...' : 'Send verification template'}
+                  {sendingVerificationTemplate ? 'Sending confirmation test...' : 'Send confirmation template test'}
                 </Button>
               </div>
             )}

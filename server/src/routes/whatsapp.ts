@@ -39,13 +39,23 @@ router.post(
 );
 
 // POST /api/content-ops/whatsapp/send-verification-template
-// Sends a template-only verification ping (defaults to hello_world/en_US).
+// Sends either generic verification template or confirmation-template test.
 router.post(
   '/send-verification-template',
   asyncHandler(async (req: Request, res: Response) => {
-    const { recipient_phone } = req.body as { recipient_phone?: string };
+    const { recipient_phone, template_type, caption, scheduled_date, scheduled_time } = req.body as {
+      recipient_phone?: string;
+      template_type?: 'verification' | 'confirmation';
+      caption?: string;
+      scheduled_date?: string;
+      scheduled_time?: string;
+    };
     const result = await sendWhatsAppVerificationTemplate({
       recipientPhone: recipient_phone || null,
+      templateType: template_type || 'verification',
+      caption: caption || null,
+      scheduledDate: scheduled_date || null,
+      scheduledTime: scheduled_time || null,
     });
     res.json({ ok: true, ...result });
   })
