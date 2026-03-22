@@ -56,6 +56,7 @@ const apiToScheduledPost = (data: any): ScheduledPost => {
     caption: data.caption,
     contentItemId: data.contentItemId,
     channelKey: data.channelKey,
+    recipientPhone: data.recipientPhone ?? null,
     scheduledDate,
     scheduledTime,
     scheduledAt: data.scheduledAt,
@@ -128,6 +129,7 @@ const create = async (input: ScheduledPostInput): Promise<ScheduledPost> => {
       caption: input.caption || null,
       contentItemId: input.contentItemId || null,
       channelKey: input.channelKey || null,
+      recipientPhone: input.recipientPhone || null,
       scheduledAt,
       platforms: input.platforms,
       status: 'planned',
@@ -152,6 +154,7 @@ const update = async (id: string, input: Partial<ScheduledPostInput>): Promise<S
   if (input.caption !== undefined) body.caption = input.caption;
   if (input.contentItemId !== undefined) body.contentItemId = input.contentItemId;
   if (input.channelKey !== undefined) body.channelKey = input.channelKey;
+  if (input.recipientPhone !== undefined) body.recipientPhone = input.recipientPhone;
   if (input.platforms !== undefined) body.platforms = input.platforms;
   if (input.media !== undefined) body.media = mediaToApi(input.media);
   

@@ -29,6 +29,7 @@ export interface ScheduledPost {
   caption: string | null;
   contentItemId?: string;
   channelKey?: ChannelKey | null;
+  recipientPhone?: string | null;
   scheduledDate: string; // YYYY-MM-DD
   scheduledTime: string; // HH:mm
   scheduledAt: string; // ISO datetime
@@ -45,6 +46,7 @@ export interface ScheduledPostInput {
   caption?: string;
   contentItemId?: string;
   channelKey?: ChannelKey | null;
+  recipientPhone?: string | null;
   scheduledDate: string;
   scheduledTime: string;
   platforms: Platform[];

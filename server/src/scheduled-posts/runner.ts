@@ -6,6 +6,7 @@ import { getProvider } from '../publish/providers/registry.js';
 import { logger } from '../utils/logger.js';
 import type { ProviderResult } from '../publish/providers/types.js';
 import { sendWhatsAppAssistedStatus } from '../whatsapp/status-service.js';
+import { startAssistedConfirmationForScheduledPost } from '../whatsapp/assisted-confirmation.js';
 
 const ENABLED = process.env.SCHEDULED_POSTS_ENABLED !== 'false';
 const INTERVAL_MS = Number(process.env.SCHEDULED_POSTS_INTERVAL_MS ?? 60_000);
@@ -78,6 +79,12 @@ const toFriendlyPublishError = async (
 type ScheduledPostRecord = typeof scheduledPosts.$inferSelect & {
   contentItemId?: string | null;
   channelKey?: string | null;
+  recipientPhone?: string | null;
+};
+
+const isAssistedConfirmationEnabled = () => {
+  const value = (process.env.WA_ASSISTED_CONFIRMATION_ENABLED || 'true').trim().toLowerCase();
+  return value !== 'false' && value !== '0' && value !== 'no';
 };
 
 export const executePost = async (post: ScheduledPostRecord) => {
@@ -92,6 +99,7 @@ export const executePost = async (post: ScheduledPostRecord) => {
   }
 
   let postedToAny = false;
+  let queuedForConfirmation = false;
   let cachedMedia: Array<typeof scheduledPostMedia.$inferSelect> | null = null;
   const getMedia = async () => {
     if (cachedMedia) return cachedMedia;
@@ -188,12 +196,28 @@ export const executePost = async (post: ScheduledPostRecord) => {
     }
 
     try {
-      const result = await sendWhatsAppAssistedStatus({
-        text,
-        mediaUrl,
-        mimeType: best?.mimeType || null,
-      });
-      results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
+      if (isAssistedConfirmationEnabled()) {
+        const confirmation = await startAssistedConfirmationForScheduledPost({
+          scheduledPostId: post.id,
+          caption: text,
+          mediaUrl,
+          mimeType: best?.mimeType || null,
+          recipientPhone: post.recipientPhone ?? null,
+        });
+        results.push({
+          providerKey: 'whatsapp_status',
+          providerRef: confirmation.promptMessageId,
+        });
+        queuedForConfirmation = true;
+      } else {
+        const result = await sendWhatsAppAssistedStatus({
+          text,
+          mediaUrl,
+          mimeType: best?.mimeType || null,
+          recipientPhone: post.recipientPhone ?? null,
+        });
+        results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
+      }
       postedToAny = true;
     } catch (error) {
       throw await toFriendlyPublishError('whatsapp_status', error);
@@ -208,8 +232,8 @@ export const executePost = async (post: ScheduledPostRecord) => {
   }
 
   if (postedToAny) {
-    await markStatus(post.id, 'published');
-    if (post.contentItemId) {
+    await markStatus(post.id, queuedForConfirmation ? 'queued' : 'published');
+    if (!queuedForConfirmation && post.contentItemId) {
       await db
         .update(contentItems)
         .set({ status: 'posted', updatedAt: new Date() })

@@ -39,6 +39,7 @@ export const sendWhatsAppAssistedStatus = async (params: {
   text: string;
   mediaUrl: string;
   mimeType?: string | null;
+  recipientPhone?: string | null;
 }): Promise<{ messageId: string }> => {
   const fullText = (params.text || '').trim();
   if (!fullText) {
@@ -66,7 +67,7 @@ export const sendWhatsAppAssistedStatus = async (params: {
   let mediaResultId: string;
   try {
     const mediaType = isImage ? 'image' : 'video';
-    const result = await sendWhatsAppMedia(mediaType, mediaUrl, mediaCaption);
+    const result = await sendWhatsAppMedia(mediaType, mediaUrl, mediaCaption, params.recipientPhone);
     mediaResultId = result.messageId;
   } catch (error) {
     // If we hit a template-required condition (often outside the 24h window),
@@ -76,9 +77,10 @@ export const sendWhatsAppAssistedStatus = async (params: {
         name: templateName,
         language: templateLang,
         bodyText: fullText,
+        recipientPhone: params.recipientPhone,
       });
       const mediaType = isImage ? 'image' : 'video';
-      const retry = await sendWhatsAppMedia(mediaType, mediaUrl, mediaCaption);
+      const retry = await sendWhatsAppMedia(mediaType, mediaUrl, mediaCaption, params.recipientPhone);
       mediaResultId = retry.messageId;
     } else {
       throw error;
@@ -89,7 +91,7 @@ export const sendWhatsAppAssistedStatus = async (params: {
   // This works only inside a session window; if it fails, we still consider the media send a success.
   if (tailText && tailText.length > captionLimit) {
     try {
-      await sendWhatsAppText(fullText);
+      await sendWhatsAppText(fullText, params.recipientPhone);
     } catch {
       // ignore
     }
@@ -159,6 +161,7 @@ const resolveVariantAsset = async (contentItemId: string, channelKey: string) =>
 export const sendWhatsAppStatusForPublishTask = async (params: {
   publishTaskId: string;
   force?: boolean;
+  recipientPhone?: string | null;
 }) => {
   const { publishTaskId, force = false } = params;
 
@@ -200,6 +203,7 @@ export const sendWhatsAppStatusForPublishTask = async (params: {
     text: fullText,
     mediaUrl: publicUrl,
     mimeType,
+    recipientPhone: params.recipientPhone,
   });
 
   // Persist: providerRef and a publish log entry.

@@ -21,6 +21,10 @@ const ensureScheduledPostsSchema = async () => {
         ADD COLUMN IF NOT EXISTS "channel_key" varchar(50)
       `);
       await db.execute(sql`
+        ALTER TABLE "scheduled_posts"
+        ADD COLUMN IF NOT EXISTS "recipient_phone" text
+      `);
+      await db.execute(sql`
         CREATE UNIQUE INDEX IF NOT EXISTS "scheduled_posts_content_item_channel_key_unique"
         ON "scheduled_posts" ("content_item_id", "channel_key")
       `);
@@ -45,11 +49,13 @@ router.use(async (req: Request, res: Response, next: NextFunction) => {
 type ScheduledPost = typeof scheduledPosts.$inferSelect & {
   contentItemId?: string | null;
   channelKey?: string | null;
+  recipientPhone?: string | null;
 };
 
 type ScheduledPostInsert = typeof scheduledPosts.$inferInsert & {
   contentItemId?: string | null;
   channelKey?: string | null;
+  recipientPhone?: string | null;
 };
 
 // Validation schemas
@@ -82,6 +88,7 @@ const createScheduledPostSchema = z.object({
   caption: z.string().nullable().optional(),
   contentItemId: z.string().nullable().optional(),
   channelKey: z.string().nullable().optional(),
+  recipientPhone: z.string().nullable().optional(),
   scheduledAt: z.string().datetime(),
   platforms: z.array(platformSchema).default([]),
   status: statusSchema.default('planned'),
@@ -93,6 +100,7 @@ const updateScheduledPostSchema = z.object({
   caption: z.string().nullable().optional(),
   contentItemId: z.string().nullable().optional(),
   channelKey: z.string().nullable().optional(),
+  recipientPhone: z.string().nullable().optional(),
   scheduledAt: z.string().datetime().optional(),
   platforms: z.array(platformSchema).optional(),
   status: statusSchema.optional(),
@@ -135,6 +143,7 @@ const transformScheduledPost = (post: ScheduledPost, media: typeof scheduledPost
     caption: post.caption,
     contentItemId: post.contentItemId ?? null,
     channelKey: post.channelKey ?? null,
+    recipientPhone: post.recipientPhone ?? null,
     scheduledAt: post.scheduledAt.toISOString(),
     scheduledDate: post.scheduledAt.toISOString().split('T')[0],
     scheduledTime: post.scheduledAt.toISOString().split('T')[1].substring(0, 5),
@@ -264,7 +273,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       return res.status(400).json({ error: 'Validation failed', details: parsed.error.errors });
     }
 
-    const { title, caption, contentItemId, channelKey, scheduledAt, platforms, status, media } = parsed.data;
+    const { title, caption, contentItemId, channelKey, recipientPhone, scheduledAt, platforms, status, media } = parsed.data;
     const postId = generateId();
     const now = new Date();
     
@@ -275,6 +284,7 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
       caption: caption ?? null,
       contentItemId: contentItemId ?? null,
       channelKey: channelKey ?? null,
+      recipientPhone: recipientPhone ?? null,
       scheduledAt: new Date(scheduledAt),
       platforms,
       status,
@@ -327,7 +337,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       return res.status(404).json({ error: 'Scheduled post not found' });
     }
 
-    const { title, caption, contentItemId, channelKey, scheduledAt, platforms, status, media } = parsed.data;
+    const { title, caption, contentItemId, channelKey, recipientPhone, scheduledAt, platforms, status, media } = parsed.data;
     const now = new Date();
 
     // Build update object (no mediaIds - derived from scheduled_post_media)
@@ -348,6 +358,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
     if (status !== undefined) updates.status = status;
     if (contentItemId !== undefined) updates.contentItemId = contentItemId;
     if (channelKey !== undefined) updates.channelKey = channelKey;
+    if (recipientPhone !== undefined) updates.recipientPhone = recipientPhone;
 
     // Update the post
     await db.update(scheduledPosts).set(updates).where(eq(scheduledPosts.id, id));

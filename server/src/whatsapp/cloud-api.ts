@@ -6,7 +6,7 @@ type WhatsAppSendResult = {
 type WhatsAppConfig = {
   accessToken: string;
   phoneNumberId: string;
-  recipientPhone: string;
+  defaultRecipientPhone: string | null;
   apiVersion: string;
 };
 
@@ -38,12 +38,24 @@ const normalizePhone = (value: string): string => {
 };
 
 export const getWhatsAppConfig = (): WhatsAppConfig => {
+  const rawDefaultRecipient = (process.env.WA_DEFAULT_RECIPIENT_PHONE || process.env.WA_RECIPIENT_PHONE || '').trim();
   return {
     accessToken: requiredEnv('WA_ACCESS_TOKEN'),
     phoneNumberId: requiredEnv('WA_PHONE_NUMBER_ID'),
-    recipientPhone: normalizePhone(requiredEnv('WA_RECIPIENT_PHONE')),
+    defaultRecipientPhone: rawDefaultRecipient ? normalizePhone(rawDefaultRecipient) : null,
     apiVersion: (process.env.WA_API_VERSION || 'v19.0').trim(),
   };
+};
+
+const resolveRecipientPhone = (config: WhatsAppConfig, recipientPhone?: string | null): string => {
+  const override = (recipientPhone || '').trim();
+  if (override) {
+    return normalizePhone(override);
+  }
+  if (config.defaultRecipientPhone) {
+    return config.defaultRecipientPhone;
+  }
+  throw new Error('Missing recipient phone. Provide a recipient or set WA_DEFAULT_RECIPIENT_PHONE (or WA_RECIPIENT_PHONE).');
 };
 
 const parseMessageId = (data: any): string | null => {
@@ -117,11 +129,15 @@ const waFetch = async (config: WhatsAppConfig, body: unknown): Promise<WhatsAppS
   return { messageId, raw: data };
 };
 
-export const sendWhatsAppText = async (text: string): Promise<WhatsAppSendResult> => {
+export const sendWhatsAppText = async (
+  text: string,
+  recipientPhone?: string | null
+): Promise<WhatsAppSendResult> => {
   const config = getWhatsAppConfig();
+  const to = resolveRecipientPhone(config, recipientPhone);
   const body = {
     messaging_product: 'whatsapp',
-    to: config.recipientPhone,
+    to,
     type: 'text',
     text: {
       body: text,
@@ -134,13 +150,15 @@ export const sendWhatsAppText = async (text: string): Promise<WhatsAppSendResult
 export const sendWhatsAppMedia = async (
   mediaType: 'image' | 'video',
   mediaUrl: string,
-  caption?: string | null
+  caption?: string | null,
+  recipientPhone?: string | null
 ): Promise<WhatsAppSendResult> => {
   const config = getWhatsAppConfig();
+  const to = resolveRecipientPhone(config, recipientPhone);
   const safeCaption = (caption ?? '').trim();
   const body: any = {
     messaging_product: 'whatsapp',
-    to: config.recipientPhone,
+    to,
     type: mediaType,
     [mediaType]: {
       link: mediaUrl,
@@ -154,26 +172,40 @@ export const sendWhatsAppTemplate = async (params: {
   name: string;
   language: string;
   bodyText?: string;
+  quickReplyButtons?: Array<{ index: number; payload: string }>;
+  recipientPhone?: string | null;
 }): Promise<WhatsAppSendResult> => {
   const config = getWhatsAppConfig();
+  const to = resolveRecipientPhone(config, params.recipientPhone);
   const bodyText = (params.bodyText ?? '').trim();
+  const buttonComponents =
+    Array.isArray(params.quickReplyButtons) && params.quickReplyButtons.length > 0
+      ? params.quickReplyButtons
+          .filter((button) => Number.isInteger(button.index) && button.index >= 0 && button.index <= 9)
+          .map((button) => ({
+            type: 'button',
+            sub_type: 'quick_reply',
+            index: String(button.index),
+            parameters: [{ type: 'payload', payload: button.payload }],
+          }))
+      : [];
+  const bodyComponents = bodyText
+    ? [
+        {
+          type: 'body',
+          parameters: [{ type: 'text', text: bodyText }],
+        },
+      ]
+    : [];
+  const components = [...bodyComponents, ...buttonComponents];
   const body: any = {
     messaging_product: 'whatsapp',
-    to: config.recipientPhone,
+    to,
     type: 'template',
     template: {
       name: params.name,
       language: { code: params.language },
-      ...(bodyText
-        ? {
-            components: [
-              {
-                type: 'body',
-                parameters: [{ type: 'text', text: bodyText }],
-              },
-            ],
-          }
-        : {}),
+      ...(components.length > 0 ? { components } : {}),
     },
   };
 
