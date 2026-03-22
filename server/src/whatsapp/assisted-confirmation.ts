@@ -521,12 +521,13 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   return { promptMessageId: prompt.messageId };
 };
 
-const handleAffirmativeReply = async (pending: PendingConfirmation, now: Date) => {
+const handleAffirmativeReply = async (pending: PendingConfirmation, now: Date, replyPhone?: string | null) => {
+  const recipientPhone = (replyPhone || '').trim() || pending.recipient_phone;
   const result = await sendWhatsAppAssistedStatus({
     text: pending.final_text,
     mediaUrl: pending.media_url,
     mimeType: pending.mime_type,
-    recipientPhone: pending.recipient_phone,
+    recipientPhone,
   });
   await updateConfirmationState(pending.id, {
     status: 'sent',
@@ -560,7 +561,8 @@ const handleAffirmativeReply = async (pending: PendingConfirmation, now: Date) =
   }
 };
 
-const handleNegativeReply = async (pending: PendingConfirmation, now: Date) => {
+const handleNegativeReply = async (pending: PendingConfirmation, now: Date, replyPhone?: string | null) => {
+  const recipientPhone = (replyPhone || '').trim() || pending.recipient_phone;
   await updateConfirmationState(pending.id, {
     status: 'declined',
     confirmedAt: now,
@@ -576,7 +578,7 @@ const handleNegativeReply = async (pending: PendingConfirmation, now: Date) => {
     })
     .where(eq(scheduledPosts.id, pending.scheduled_post_id));
   try {
-    await sendWhatsAppText('Okay, skipped this scheduled post.', pending.recipient_phone);
+    await sendWhatsAppText('Okay, skipped this scheduled post.', recipientPhone);
   } catch {
     // non-blocking acknowledgement
   }
@@ -683,7 +685,7 @@ export const processIncomingConfirmationWebhook = async (
 
     if (isAffirmativeReply(replyText)) {
       try {
-        await onAffirmative(pending, now);
+        await onAffirmative(pending, now, from);
         confirmed += 1;
         await updateInbound(inboundEventId, {
           status: 'confirmed',
@@ -712,7 +714,7 @@ export const processIncomingConfirmationWebhook = async (
     if (isNegativeReply(replyText)) {
       declined += 1;
       try {
-        await onNegative(pending, now);
+        await onNegative(pending, now, from);
       } catch (error) {
         logger.warn('Failed to process negative WhatsApp confirmation', {
           providerMessageId,

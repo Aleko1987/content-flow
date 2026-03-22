@@ -270,6 +270,10 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
                 <p className="text-xs text-muted-foreground">
                   WhatsApp Status is assisted (manual publish). At publish time we’ll send the caption + media to your WhatsApp via Cloud API.
                 </p>
+                <p className="text-xs text-muted-foreground">
+                  Template test buttons only validate template delivery. Use <strong>Post Now</strong> (or schedule runner)
+                  to create a live confirmation workflow that publishes after you tap Confirm.
+                </p>
                 <Button
                   type="button"
                   variant="outline"
