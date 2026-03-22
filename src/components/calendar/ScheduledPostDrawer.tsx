@@ -8,6 +8,7 @@ import { useToast } from '@/hooks/use-toast';
 import { PlatformMultiSelect } from './PlatformMultiSelect';
 import { MediaDropzone } from './MediaDropzone';
 import { scheduledPostApiService } from '@/services/scheduledPostApiService';
+import { apiClient } from '@/lib/api-client';
 import type { ScheduledPost, Platform, MediaItem } from '@/types/scheduled-post';
 import { Trash2 } from 'lucide-react';
 import {
@@ -47,6 +48,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const [media, setMedia] = useState<MediaItem[]>([]);
   const [saving, setSaving] = useState(false);
   const [postingNow, setPostingNow] = useState(false);
+  const [sendingVerificationTemplate, setSendingVerificationTemplate] = useState(false);
 
   const instagramSelected = platforms.includes('instagram');
   const whatsappSelected = platforms.includes('whatsapp_status');
@@ -171,6 +173,23 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     }
   };
 
+  const handleSendVerificationTemplate = async () => {
+    setSendingVerificationTemplate(true);
+    try {
+      const result = await apiClient.whatsapp.sendVerificationTemplate();
+      toast({
+        title: 'Verification template sent',
+        description: `Sent ${result.templateName} (${result.templateLanguage})`,
+      });
+    } catch (error) {
+      console.error('Verification template send failed:', error);
+      const message = error instanceof Error ? error.message : 'Failed to send verification template';
+      toast({ title: 'Error', description: message, variant: 'destructive' });
+    } finally {
+      setSendingVerificationTemplate(false);
+    }
+  };
+
   return (
     <Sheet open={open} onOpenChange={(o) => !o && onClose()}>
       <SheetContent className="w-full sm:max-w-lg overflow-y-auto">
@@ -222,9 +241,20 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
             <Label>Platforms</Label>
             <PlatformMultiSelect value={platforms} onChange={setPlatforms} />
             {whatsappSelected && (
-              <p className="mt-2 text-xs text-muted-foreground">
-                WhatsApp Status is assisted (manual publish). At publish time we’ll send the caption + media to your WhatsApp via Cloud API.
-              </p>
+              <div className="mt-2 space-y-2">
+                <p className="text-xs text-muted-foreground">
+                  WhatsApp Status is assisted (manual publish). At publish time we’ll send the caption + media to your WhatsApp via Cloud API.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleSendVerificationTemplate}
+                  disabled={saving || postingNow || sendingVerificationTemplate}
+                >
+                  {sendingVerificationTemplate ? 'Sending template...' : 'Send verification template'}
+                </Button>
+              </div>
             )}
           </div>
 

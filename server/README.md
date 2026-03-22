@@ -54,6 +54,13 @@ FB_REDIRECT_URI=http://localhost:3001/api/content-ops/integrations/facebook/conn
 # Optional: lock integrations to one Facebook Page ID
 FB_PAGE_ID=
 
+# Earthcure forwarded WhatsApp inbound webhook shared secret
+CONTENT_FLOW_FORWARD_TOKEN=
+
+# Optional WhatsApp verification-template button config
+WA_VERIFICATION_TEMPLATE_NAME=hello_world
+WA_VERIFICATION_TEMPLATE_LANGUAGE=en_US
+
 # App base URL used for OAuth redirects (frontend)
 APP_BASE_URL=http://localhost:8080
 ```

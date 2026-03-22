@@ -16,6 +16,19 @@ type IncomingWebhookPayload = {
   }>;
 };
 
+type InboundEventRecordParams = {
+  providerMessageId: string | null;
+  fromPhone: string | null;
+  contextMessageId: string | null;
+  replyText: string | null;
+  rawMessage: Record<string, unknown>;
+};
+
+type InboundEventRecordResult = {
+  eventId: string | null;
+  duplicate: boolean;
+};
+
 type PendingConfirmation = {
   id: string;
   scheduled_post_id: string;
@@ -27,6 +40,7 @@ type PendingConfirmation = {
 };
 
 let ensureTablePromise: Promise<void> | null = null;
+let ensureInboundTablePromise: Promise<void> | null = null;
 
 const generateId = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -113,14 +127,45 @@ const createPromptPreview = (caption: string) => {
   return `${trimmed.slice(0, max - 1).trimEnd()}...`;
 };
 
-const isAffirmativeReply = (text: string) => {
-  const value = text.trim().toLowerCase();
-  return value === 'yes' || value === 'y' || value === 'ok' || value === 'confirm' || value === 'publish';
+const normalizeIntentText = (text: string) => {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .replace(/[!?.;,:'"(){}\[\]]/g, '');
+};
+
+export const isAffirmativeReply = (text: string) => {
+  const value = normalizeIntentText(text);
+  if (!value) return false;
+  return (
+    value === 'yes' ||
+    value === 'y' ||
+    value === 'ok' ||
+    value === 'okay' ||
+    value === 'confirm' ||
+    value === 'confirmed' ||
+    value === 'post' ||
+    value === 'publish' ||
+    value === 'ship it' ||
+    value === 'go live' ||
+    value === 'do it' ||
+    value === '👍' ||
+    value === '👍🏽' ||
+    value === '👍🏿'
+  );
 };
 
 const isNegativeReply = (text: string) => {
-  const value = text.trim().toLowerCase();
+  const value = normalizeIntentText(text);
   return value === 'no' || value === 'n' || value === 'cancel' || value === 'skip';
+};
+
+export const extractInboundMessagesFromWebhook = (payload: IncomingWebhookPayload) => {
+  return (payload.entry || [])
+    .flatMap((entry) => entry.changes || [])
+    .flatMap((change) => change.value?.messages || [])
+    .filter((message): message is Record<string, unknown> => !!message && typeof message === 'object');
 };
 
 const extractReplyText = (message: Record<string, unknown>): string | null => {
@@ -147,6 +192,126 @@ const extractReplyText = (message: Record<string, unknown>): string | null => {
 const extractContextMessageId = (message: Record<string, unknown>): string | null => {
   const contextId = (message.context as { id?: unknown } | undefined)?.id;
   return typeof contextId === 'string' && contextId.trim() ? contextId : null;
+};
+
+const extractProviderMessageId = (message: Record<string, unknown>): string | null => {
+  const id = message.id;
+  return typeof id === 'string' && id.trim() ? id.trim() : null;
+};
+
+const ensureInboundEventsTable = async () => {
+  if (!ensureInboundTablePromise) {
+    ensureInboundTablePromise = (async () => {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS whatsapp_inbound_events (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          provider_message_id TEXT,
+          from_phone TEXT,
+          context_message_id TEXT,
+          reply_text TEXT,
+          matched_confirmation_id UUID,
+          status TEXT NOT NULL DEFAULT 'received',
+          error_text TEXT,
+          raw_message_json JSONB NOT NULL,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_inbound_provider_message_id
+        ON whatsapp_inbound_events (provider_message_id)
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_inbound_created
+        ON whatsapp_inbound_events (created_at DESC)
+      `);
+    })().catch((error) => {
+      ensureInboundTablePromise = null;
+      throw error;
+    });
+  }
+  await ensureInboundTablePromise;
+};
+
+const recordInboundEvent = async (params: InboundEventRecordParams): Promise<InboundEventRecordResult> => {
+  await ensureInboundEventsTable();
+  const rawMessageJson = JSON.stringify(params.rawMessage);
+  const insert = await db.execute(sql`
+    INSERT INTO whatsapp_inbound_events (
+      provider_message_id,
+      from_phone,
+      context_message_id,
+      reply_text,
+      raw_message_json,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${params.providerMessageId},
+      ${params.fromPhone},
+      ${params.contextMessageId},
+      ${params.replyText},
+      ${rawMessageJson}::jsonb,
+      'received',
+      now(),
+      now()
+    )
+    ON CONFLICT (provider_message_id) DO NOTHING
+    RETURNING id
+  `);
+  const rows = Array.isArray((insert as any).rows) ? ((insert as any).rows as Array<{ id?: string }>) : [];
+  if (rows.length > 0 && rows[0]?.id) {
+    return { eventId: rows[0].id, duplicate: false };
+  }
+
+  if (params.providerMessageId) {
+    return { eventId: null, duplicate: true };
+  }
+
+  const fallbackInsert = await db.execute(sql`
+    INSERT INTO whatsapp_inbound_events (
+      provider_message_id,
+      from_phone,
+      context_message_id,
+      reply_text,
+      raw_message_json,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      NULL,
+      ${params.fromPhone},
+      ${params.contextMessageId},
+      ${params.replyText},
+      ${rawMessageJson}::jsonb,
+      'received',
+      now(),
+      now()
+    )
+    RETURNING id
+  `);
+  const fallbackRows = Array.isArray((fallbackInsert as any).rows)
+    ? ((fallbackInsert as any).rows as Array<{ id?: string }>)
+    : [];
+  return { eventId: fallbackRows[0]?.id || null, duplicate: false };
+};
+
+const updateInboundEventOutcome = async (
+  eventId: string | null,
+  params: { status: string; matchedConfirmationId?: string | null; errorText?: string | null }
+) => {
+  if (!eventId) return;
+  await ensureInboundEventsTable();
+  await db.execute(sql`
+    UPDATE whatsapp_inbound_events
+    SET status = ${params.status},
+        matched_confirmation_id = ${params.matchedConfirmationId ?? null},
+        error_text = ${params.errorText ?? null},
+        updated_at = now()
+    WHERE id = ${eventId}
+  `);
 };
 
 const findPendingConfirmation = async (
@@ -266,102 +431,95 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   return { promptMessageId: prompt.messageId };
 };
 
-export const processIncomingConfirmationWebhook = async (payload: IncomingWebhookPayload) => {
-  const messages = (payload.entry || [])
-    .flatMap((entry) => entry.changes || [])
-    .flatMap((change) => change.value?.messages || []);
+const handleAffirmativeReply = async (pending: PendingConfirmation, now: Date) => {
+  const result = await sendWhatsAppAssistedStatus({
+    text: pending.final_text,
+    mediaUrl: pending.media_url,
+    mimeType: pending.mime_type,
+    recipientPhone: pending.recipient_phone,
+  });
+  await updateConfirmationState(pending.id, {
+    status: 'sent',
+    confirmedAt: now,
+    completedAt: now,
+    responseMessageId: result.messageId,
+    lastError: null,
+  });
 
-  let processed = 0;
-  let confirmed = 0;
-  let declined = 0;
+  await db
+    .update(scheduledPosts)
+    .set({
+      status: 'published',
+      updatedAt: now,
+    })
+    .where(eq(scheduledPosts.id, pending.scheduled_post_id));
 
-  for (const message of messages) {
-    if (!message || typeof message !== 'object') {
-      continue;
-    }
-    const from = typeof message.from === 'string' ? message.from : '';
-    const replyText = extractReplyText(message);
-    if (!from || !replyText) {
-      continue;
-    }
+  const [post] = await db
+    .select({ contentItemId: scheduledPosts.contentItemId })
+    .from(scheduledPosts)
+    .where(eq(scheduledPosts.id, pending.scheduled_post_id))
+    .limit(1);
+  if (post?.contentItemId) {
+    await db
+      .update(contentItems)
+      .set({
+        status: 'posted',
+        updatedAt: now,
+      })
+      .where(eq(contentItems.id, post.contentItemId));
+  }
+};
 
-    const contextMessageId = extractContextMessageId(message);
-    const pending = await findPendingConfirmation(from, contextMessageId);
-    if (!pending) {
-      continue;
-    }
+const handleNegativeReply = async (pending: PendingConfirmation, now: Date) => {
+  await updateConfirmationState(pending.id, {
+    status: 'declined',
+    confirmedAt: now,
+    completedAt: now,
+    responseMessageId: null,
+    lastError: null,
+  });
+  await db
+    .update(scheduledPosts)
+    .set({
+      status: 'failed',
+      updatedAt: now,
+    })
+    .where(eq(scheduledPosts.id, pending.scheduled_post_id));
+  try {
+    await sendWhatsAppText('Okay, skipped this scheduled post.', pending.recipient_phone);
+  } catch {
+    // non-blocking acknowledgement
+  }
+};
 
-    const now = new Date();
-    processed += 1;
+type ProcessorDeps = {
+  findPending?: typeof findPendingConfirmation;
+  recordInbound?: typeof recordInboundEvent;
+  updateInbound?: typeof updateInboundEventOutcome;
+  onAffirmative?: typeof handleAffirmativeReply;
+  onNegative?: typeof handleNegativeReply;
+  onAffirmativeFailure?: (pending: PendingConfirmation, now: Date, messageText: string) => Promise<void>;
+};
 
-    if (isAffirmativeReply(replyText)) {
-      try {
-        const result = await sendWhatsAppAssistedStatus({
-          text: pending.final_text,
-          mediaUrl: pending.media_url,
-          mimeType: pending.mime_type,
-          recipientPhone: pending.recipient_phone,
-        });
-        await updateConfirmationState(pending.id, {
-          status: 'sent',
-          confirmedAt: now,
-          completedAt: now,
-          responseMessageId: result.messageId,
-          lastError: null,
-        });
-
-        await db
-          .update(scheduledPosts)
-          .set({
-            status: 'published',
-            updatedAt: now,
-          })
-          .where(eq(scheduledPosts.id, pending.scheduled_post_id));
-
-        const [post] = await db
-          .select({ contentItemId: scheduledPosts.contentItemId })
-          .from(scheduledPosts)
-          .where(eq(scheduledPosts.id, pending.scheduled_post_id))
-          .limit(1);
-        if (post?.contentItemId) {
-          await db
-            .update(contentItems)
-            .set({
-              status: 'posted',
-              updatedAt: now,
-            })
-            .where(eq(contentItems.id, post.contentItemId));
-        }
-
-        confirmed += 1;
-      } catch (error) {
-        const messageText = error instanceof Error ? error.message : String(error);
-        await updateConfirmationState(pending.id, {
-          status: 'failed',
-          confirmedAt: now,
-          completedAt: now,
-          responseMessageId: null,
-          lastError: messageText,
-        });
-        await db
-          .update(scheduledPosts)
-          .set({
-            status: 'failed',
-            updatedAt: now,
-          })
-          .where(eq(scheduledPosts.id, pending.scheduled_post_id));
-        logger.error(`Failed to send confirmed WhatsApp assisted post ${pending.scheduled_post_id}: ${messageText}`);
-      }
-      continue;
-    }
-
-    if (isNegativeReply(replyText)) {
+export const processIncomingConfirmationWebhook = async (
+  payload: IncomingWebhookPayload,
+  deps: ProcessorDeps = {}
+) => {
+  const messages = extractInboundMessagesFromWebhook(payload);
+  const findPending = deps.findPending || findPendingConfirmation;
+  const recordInbound = deps.recordInbound || recordInboundEvent;
+  const updateInbound = deps.updateInbound || updateInboundEventOutcome;
+  const onAffirmative = deps.onAffirmative || handleAffirmativeReply;
+  const onNegative = deps.onNegative || handleNegativeReply;
+  const onAffirmativeFailure =
+    deps.onAffirmativeFailure ||
+    (async (pending: PendingConfirmation, now: Date, messageText: string) => {
       await updateConfirmationState(pending.id, {
-        status: 'declined',
+        status: 'failed',
         confirmedAt: now,
         completedAt: now,
         responseMessageId: null,
-        lastError: null,
+        lastError: messageText,
       });
       await db
         .update(scheduledPosts)
@@ -370,15 +528,159 @@ export const processIncomingConfirmationWebhook = async (payload: IncomingWebhoo
           updatedAt: now,
         })
         .where(eq(scheduledPosts.id, pending.scheduled_post_id));
-      try {
-        await sendWhatsAppText('Okay, skipped this scheduled post.', pending.recipient_phone);
-      } catch {
-        // non-blocking acknowledgement
+    });
+
+  let processed = 0;
+  let confirmed = 0;
+  let declined = 0;
+  let ignored = 0;
+  let unmatched = 0;
+  let duplicates = 0;
+  let failed = 0;
+
+  for (const message of messages) {
+    const from = typeof message.from === 'string' ? message.from : '';
+    const replyText = extractReplyText(message);
+    const providerMessageId = extractProviderMessageId(message);
+    const contextMessageId = extractContextMessageId(message);
+
+    let inboundEventId: string | null = null;
+    try {
+      const inbound = await recordInbound({
+        providerMessageId,
+        fromPhone: from || null,
+        contextMessageId,
+        replyText,
+        rawMessage: message,
+      });
+      inboundEventId = inbound.eventId;
+      if (inbound.duplicate) {
+        duplicates += 1;
+        continue;
       }
-      declined += 1;
+    } catch (error) {
+      logger.warn('Failed to persist inbound WhatsApp event; continuing', {
+        providerMessageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
     }
+
+    if (!from || !replyText) {
+      ignored += 1;
+      await updateInbound(inboundEventId, { status: 'ignored' }).catch((error) => {
+        logger.warn('Failed to update inbound event status=ignored', {
+          providerMessageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+      continue;
+    }
+
+    const pending = await findPending(from, contextMessageId);
+    if (!pending) {
+      unmatched += 1;
+      await updateInbound(inboundEventId, { status: 'unmatched' }).catch((error) => {
+        logger.warn('Failed to update inbound event status=unmatched', {
+          providerMessageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+      continue;
+    }
+
+    processed += 1;
+    const now = new Date();
+
+    if (isAffirmativeReply(replyText)) {
+      try {
+        await onAffirmative(pending, now);
+        confirmed += 1;
+        await updateInbound(inboundEventId, {
+          status: 'confirmed',
+          matchedConfirmationId: pending.id,
+          errorText: null,
+        });
+      } catch (error) {
+        const messageText = error instanceof Error ? error.message : String(error);
+        failed += 1;
+        await onAffirmativeFailure(pending, now, messageText);
+        logger.error(`Failed to send confirmed WhatsApp assisted post ${pending.scheduled_post_id}: ${messageText}`);
+        await updateInbound(inboundEventId, {
+          status: 'failed',
+          matchedConfirmationId: pending.id,
+          errorText: messageText,
+        }).catch((inboundError) => {
+          logger.warn('Failed to update inbound event status=failed', {
+            providerMessageId,
+            error: inboundError instanceof Error ? inboundError.message : String(inboundError),
+          });
+        });
+      }
+      continue;
+    }
+
+    if (isNegativeReply(replyText)) {
+      declined += 1;
+      try {
+        await onNegative(pending, now);
+      } catch (error) {
+        logger.warn('Failed to process negative WhatsApp confirmation', {
+          providerMessageId,
+          scheduledPostId: pending.scheduled_post_id,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      }
+      await updateInbound(inboundEventId, {
+        status: 'declined',
+        matchedConfirmationId: pending.id,
+        errorText: null,
+      }).catch((error) => {
+        logger.warn('Failed to update inbound event status=declined', {
+          providerMessageId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      });
+      continue;
+    }
+
+    unmatched += 1;
+    await updateInbound(inboundEventId, {
+      status: 'unmatched',
+      matchedConfirmationId: pending.id,
+      errorText: null,
+    }).catch((error) => {
+      logger.warn('Failed to update inbound event status=unmatched for non-intent reply', {
+        providerMessageId,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    });
   }
 
-  return { processed, confirmed, declined };
+  return { processed, confirmed, declined, ignored, unmatched, duplicates, failed, received: messages.length };
+};
+
+export const validateForwardToken = (
+  headerToken: string | undefined,
+  expectedToken: string | undefined
+): { ok: boolean; status: 200 | 401 | 403 } => {
+  const expected = (expectedToken || '').trim();
+  const provided = (headerToken || '').trim();
+  if (!provided) {
+    return { ok: false, status: 401 };
+  }
+  if (!expected || provided !== expected) {
+    return { ok: false, status: 403 };
+  }
+  return { ok: true, status: 200 };
+};
+
+export const getForwardTokenFromHeader = (headerValue: string | string[] | undefined): string | undefined => {
+  if (Array.isArray(headerValue)) {
+    return headerValue[0];
+  }
+  if (typeof headerValue === 'string') {
+    return headerValue;
+  }
+  return undefined;
 };
 

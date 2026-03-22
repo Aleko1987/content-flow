@@ -232,3 +232,24 @@ export const sendWhatsAppStatusForPublishTask = async (params: {
   return { alreadySent: false, messageId };
 };
 
+export const sendWhatsAppVerificationTemplate = async (params?: { recipientPhone?: string | null }) => {
+  const templateName = (process.env.WA_VERIFICATION_TEMPLATE_NAME || 'hello_world').trim();
+  const templateLanguage = (process.env.WA_VERIFICATION_TEMPLATE_LANGUAGE || 'en_US').trim();
+  if (!templateName) {
+    throw new Error('WA_VERIFICATION_TEMPLATE_NAME is required');
+  }
+
+  // Intentionally send without body params. This endpoint is only for template setup verification.
+  const result = await sendWhatsAppTemplate({
+    name: templateName,
+    language: templateLanguage,
+    recipientPhone: params?.recipientPhone ?? null,
+  });
+
+  return {
+    messageId: result.messageId,
+    templateName,
+    templateLanguage,
+  };
+};
+

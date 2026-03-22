@@ -151,6 +151,14 @@ export const apiClient = {
           force: options?.force === true,
         }),
       }).then(r => handleResponse<{ ok: true; alreadySent?: boolean; messageId: string }>(r)),
+    sendVerificationTemplate: (recipientPhone?: string): Promise<{ ok: true; messageId: string; templateName: string; templateLanguage: string }> =>
+      fetch(`${API_FULL_URL}/whatsapp/send-verification-template`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          recipient_phone: recipientPhone || null,
+        }),
+      }).then(r => handleResponse<{ ok: true; messageId: string; templateName: string; templateLanguage: string }>(r)),
   },
 
   // Integrations

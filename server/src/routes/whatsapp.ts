@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import type { Request, Response } from 'express';
 import { asyncHandler } from '../middleware/error-handler.js';
-import { sendWhatsAppStatusForPublishTask } from '../whatsapp/status-service.js';
-import { processIncomingConfirmationWebhook } from '../whatsapp/assisted-confirmation.js';
+import {
+  sendWhatsAppStatusForPublishTask,
+  sendWhatsAppVerificationTemplate,
+} from '../whatsapp/status-service.js';
+import {
+  getForwardTokenFromHeader,
+  processIncomingConfirmationWebhook,
+  validateForwardToken,
+} from '../whatsapp/assisted-confirmation.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -31,6 +38,19 @@ router.post(
   })
 );
 
+// POST /api/content-ops/whatsapp/send-verification-template
+// Sends a template-only verification ping (defaults to hello_world/en_US).
+router.post(
+  '/send-verification-template',
+  asyncHandler(async (req: Request, res: Response) => {
+    const { recipient_phone } = req.body as { recipient_phone?: string };
+    const result = await sendWhatsAppVerificationTemplate({
+      recipientPhone: recipient_phone || null,
+    });
+    res.json({ ok: true, ...result });
+  })
+);
+
 // GET /api/content-ops/whatsapp/webhook
 // Meta webhook verification endpoint.
 router.get('/webhook', (req: Request, res: Response) => {
@@ -49,13 +69,34 @@ router.get('/webhook', (req: Request, res: Response) => {
 // Receives inbound WhatsApp replies and processes confirmation actions.
 router.post(
   '/webhook',
-  asyncHandler(async (req: Request, res: Response) => {
-    const result = await processIncomingConfirmationWebhook(req.body as any);
-    logger.info(
-      `WhatsApp webhook processed=${result.processed} confirmed=${result.confirmed} declined=${result.declined}`
-    );
-    res.json({ ok: true, ...result });
-  })
+  async (req: Request, res: Response) => {
+    const providedToken = getForwardTokenFromHeader(req.headers['x-content-flow-forward-token']);
+    const auth = validateForwardToken(providedToken, process.env.CONTENT_FLOW_FORWARD_TOKEN);
+    if (!auth.ok) {
+      return res.status(auth.status).json({ ok: false, error: 'Unauthorized webhook request' });
+    }
+
+    try {
+      const result = await processIncomingConfirmationWebhook(req.body as any);
+      logger.info('Forwarded WhatsApp webhook processed', result);
+      return res.status(200).json({ ok: true, ...result });
+    } catch (error) {
+      logger.error('Forwarded WhatsApp webhook processing failed', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return res.status(200).json({
+        ok: true,
+        processed: 0,
+        confirmed: 0,
+        declined: 0,
+        ignored: 0,
+        unmatched: 0,
+        duplicates: 0,
+        failed: 1,
+        received: 0,
+      });
+    }
+  }
 );
 
 export default router;
