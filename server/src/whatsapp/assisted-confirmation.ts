@@ -4,7 +4,7 @@ import { db } from '../db/index.js';
 import { contentItems, scheduledPostMedia, scheduledPosts } from '../db/schema.js';
 import { logger } from '../utils/logger.js';
 import { sendWhatsAppText } from './cloud-api.js';
-import { sendViaEarthcureWhatsAppWithRetry } from './earthcure-bridge.js';
+import { EarthcureWhatsAppError, sendViaEarthcureWhatsAppWithRetry } from './earthcure-bridge.js';
 
 type IncomingWebhookPayload = {
   entry?: Array<{
@@ -33,7 +33,7 @@ type PendingConfirmation = {
   id: string;
   scheduled_post_id: string;
   recipient_phone: string;
-  prompt_message_id: string;
+  prompt_message_id: string | null;
   final_text: string;
   media_url: string;
   mime_type: string | null;
@@ -506,7 +506,7 @@ type AssistedConfirmationDeps = {
   upsertConfirmationRecord?: (params: {
     scheduledPostId: string;
     recipientPhone: string;
-    promptMessageId: string;
+    promptMessageId?: string | null;
     caption: string;
     mediaUrl: string;
     mimeType?: string | null;
@@ -638,7 +638,7 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
     (async (input: {
       scheduledPostId: string;
       recipientPhone: string;
-      promptMessageId: string;
+      promptMessageId?: string | null;
       caption: string;
       mediaUrl: string;
       mimeType?: string | null;
@@ -662,7 +662,7 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
           ${generateId()},
           ${input.scheduledPostId},
           ${input.recipientPhone},
-          ${input.promptMessageId},
+          ${input.promptMessageId ?? null},
           ${input.caption},
           ${input.mediaUrl},
           ${input.mimeType ?? null},
@@ -671,7 +671,15 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
           now(),
           now()
         )
-        ON CONFLICT (prompt_message_id) DO NOTHING
+        ON CONFLICT (outbound_operation_key) DO UPDATE
+        SET recipient_phone = EXCLUDED.recipient_phone,
+            prompt_message_id = EXCLUDED.prompt_message_id,
+            final_text = EXCLUDED.final_text,
+            media_url = EXCLUDED.media_url,
+            mime_type = EXCLUDED.mime_type,
+            status = ${AWAITING_CONFIRMATION_STATUS},
+            last_error = NULL,
+            updated_at = now()
       `);
     });
   const sendPrompt = deps.sendPrompt || sendViaEarthcureWhatsAppWithRetry;
@@ -770,6 +778,24 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
     await updateOutboundFailed({ operationKey, errorMessage: messageText });
+    await upsertConfirmationRecord({
+      scheduledPostId: params.scheduledPostId,
+      recipientPhone,
+      promptMessageId: null,
+      caption: params.caption,
+      mediaUrl: params.mediaUrl,
+      mimeType: params.mimeType ?? null,
+      operationKey,
+    });
+    if (error instanceof EarthcureWhatsAppError && error.retryable) {
+      logger.warn('Assisted confirmation prompt send is retryable; continuing with phone-based pending confirmation', {
+        operationId,
+        scheduledPostId: params.scheduledPostId,
+        destination: maskPhoneForLogs(recipientPhone),
+        error: messageText,
+      });
+      return { promptMessageId: `pending:${operationKey}` };
+    }
     logger.error('Assisted confirmation prompt failed via Earthcure bridge', {
       operationId,
       scheduledPostId: params.scheduledPostId,
