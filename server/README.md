@@ -56,6 +56,13 @@ FB_PAGE_ID=
 
 # Earthcure forwarded WhatsApp inbound webhook shared secret
 CONTENT_FLOW_FORWARD_TOKEN=
+# Earthcure outbound bridge endpoint for assisted prompt sends
+EARTHCURE_WHATSAPP_SEND_URL=https://www.earthcurebiodiesel.com/.netlify/functions/whatsapp-send-content-flow
+# Optional timeout override (clamped to 5000-8000ms)
+EARTHCURE_WHATSAPP_TIMEOUT_MS=7000
+# Optional custom assisted prompt body text
+# Supports placeholders: {caption} {publish_date} {publish_time} {publish_date_line} {publish_time_line}
+WA_ASSISTED_CONFIRMATION_PROMPT_TEXT=
 
 # Optional WhatsApp verification-template button config
 WA_VERIFICATION_TEMPLATE_NAME=hello_world

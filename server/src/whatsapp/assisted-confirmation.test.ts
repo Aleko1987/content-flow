@@ -166,3 +166,65 @@ test('duplicate provider message id is deduped', async () => {
   assert.equal(result.confirmed, 1);
   assert.equal(confirmActions, 1);
 });
+
+test('duplicate assisted confirmation operation id is deduped', async () => {
+  const { startAssistedConfirmationForScheduledPost } = await modulePromise;
+
+  let outboundInsertCount = 0;
+  let promptSendCount = 0;
+  const outboundByKey = new Map<
+    string,
+    { providerMessageId: string | null; responseStatus: number | null; requestId: string | null }
+  >();
+
+  const deps = {
+    loadScheduledPostTime: async () => new Date('2026-03-23T10:00:00.000Z'),
+    loadOutboundByOperationKey: async (operationKey: string) => outboundByKey.get(operationKey) || null,
+    insertOutboundOperation: async ({ operationKey }: { operationKey: string }) => {
+      outboundInsertCount += 1;
+      outboundByKey.set(operationKey, { providerMessageId: null, responseStatus: null, requestId: null });
+    },
+    updateOutboundSent: async ({
+      operationKey,
+      status,
+      providerMessageId,
+      requestId,
+    }: {
+      operationKey: string;
+      status: number;
+      providerMessageId: string;
+      requestId: string;
+    }) => {
+      outboundByKey.set(operationKey, { providerMessageId, responseStatus: status, requestId });
+    },
+    updateOutboundFailed: async (_params: { operationKey: string; errorMessage: string }) => {},
+    upsertConfirmationRecord: async () => {},
+    sendPrompt: async () => {
+      promptSendCount += 1;
+      return {
+        ok: true as const,
+        status: 200,
+        conversationId: 'conv-1',
+        providerMessageId: 'wamid.operation',
+        requestId: 'req-1',
+      };
+    },
+  };
+
+  const params = {
+    scheduledPostId: 'scheduled-dup',
+    caption: 'Caption',
+    mediaUrl: 'https://example.com/image.jpg',
+    mimeType: 'image/jpeg',
+    recipientPhone: '15550001111',
+    operationId: 'op-123',
+  };
+
+  const first = await startAssistedConfirmationForScheduledPost(params, deps);
+  const second = await startAssistedConfirmationForScheduledPost(params, deps);
+
+  assert.equal(first.promptMessageId, 'wamid.operation');
+  assert.equal(second.promptMessageId, 'wamid.operation');
+  assert.equal(promptSendCount, 1);
+  assert.equal(outboundInsertCount, 1);
+});

@@ -3,7 +3,8 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { contentItems, scheduledPosts } from '../db/schema.js';
 import { logger } from '../utils/logger.js';
-import { sendWhatsAppTemplate, sendWhatsAppText } from './cloud-api.js';
+import { sendWhatsAppText } from './cloud-api.js';
+import { sendViaEarthcureWhatsAppWithRetry } from './earthcure-bridge.js';
 import { sendWhatsAppAssistedStatus } from './status-service.js';
 
 type IncomingWebhookPayload = {
@@ -41,6 +42,7 @@ type PendingConfirmation = {
 
 let ensureTablePromise: Promise<void> | null = null;
 let ensureInboundTablePromise: Promise<void> | null = null;
+let ensureOutboundsTablePromise: Promise<void> | null = null;
 
 const generateId = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -83,8 +85,20 @@ const ensureConfirmationsTable = async () => {
         )
       `);
       await db.execute(sql`
+        ALTER TABLE whatsapp_assisted_confirmations
+        ADD COLUMN IF NOT EXISTS outbound_operation_key TEXT
+      `);
+      await db.execute(sql`
+        ALTER TABLE whatsapp_assisted_confirmations
+        ALTER COLUMN prompt_message_id DROP NOT NULL
+      `);
+      await db.execute(sql`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_assisted_prompt_message_id
         ON whatsapp_assisted_confirmations (prompt_message_id)
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_assisted_outbound_operation_key
+        ON whatsapp_assisted_confirmations (outbound_operation_key)
       `);
       await db.execute(sql`
         CREATE INDEX IF NOT EXISTS idx_whatsapp_assisted_status_created
@@ -98,45 +112,39 @@ const ensureConfirmationsTable = async () => {
   await ensureTablePromise;
 };
 
-const getConfirmationTemplateName = () => {
-  const specific = (process.env.WA_CONFIRMATION_TEMPLATE_NAME || '').trim();
-  const fallback = (process.env.WA_TEMPLATE_NAME || '').trim();
-  return specific || fallback;
-};
-
-const getConfirmationTemplateLanguage = () => {
-  const specific = (process.env.WA_CONFIRMATION_TEMPLATE_LANGUAGE || '').trim();
-  const fallback = (process.env.WA_TEMPLATE_LANGUAGE || '').trim();
-  return specific || fallback || 'en_US';
-};
-
-const parseQuickReplyButtons = () => {
-  const buttonMapRaw = (process.env.WA_CONFIRM_BUTTON_PAYLOAD_MAP || '').trim();
-  if (buttonMapRaw) {
-    const mapped = buttonMapRaw
-      .split(',')
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .map((entry) => {
-        const [indexRaw, payloadRaw = ''] = entry.split(':');
-        const index = Number.parseInt((indexRaw || '').trim(), 10);
-        const payload = payloadRaw.trim();
-        if (Number.isNaN(index) || index < 0 || index > 9) return null;
-        return { index, payload };
-      })
-      .filter((entry): entry is { index: number; payload: string } => !!entry);
-    if (mapped.length > 0) {
-      return mapped;
-    }
+const ensureOutboundOperationsTable = async () => {
+  if (!ensureOutboundsTablePromise) {
+    ensureOutboundsTablePromise = (async () => {
+      await db.execute(sql`
+        CREATE TABLE IF NOT EXISTS whatsapp_outbound_operations (
+          id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+          operation_id TEXT NOT NULL,
+          operation_key TEXT NOT NULL,
+          destination_phone TEXT NOT NULL,
+          source TEXT NOT NULL DEFAULT 'content_flow',
+          status TEXT NOT NULL DEFAULT 'pending',
+          response_status INTEGER,
+          provider_message_id TEXT,
+          request_id TEXT,
+          last_error TEXT,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+      `);
+      await db.execute(sql`
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_outbound_operation_key
+        ON whatsapp_outbound_operations (operation_key)
+      `);
+      await db.execute(sql`
+        CREATE INDEX IF NOT EXISTS idx_whatsapp_outbound_operation_created
+        ON whatsapp_outbound_operations (created_at DESC)
+      `);
+    })().catch((error) => {
+      ensureOutboundsTablePromise = null;
+      throw error;
+    });
   }
-
-  const yesPayload = (process.env.WA_CONFIRM_YES_PAYLOAD || '').trim();
-  const yesIndexRaw = (process.env.WA_CONFIRM_YES_BUTTON_INDEX || '0').trim();
-  const yesIndex = Number.parseInt(yesIndexRaw, 10);
-  if (!yesPayload || Number.isNaN(yesIndex)) {
-    return [];
-  }
-  return [{ index: yesIndex, payload: yesPayload }];
+  await ensureOutboundsTablePromise;
 };
 
 const parseBodyParamsTemplate = (captionPreview: string, publishDate: string, publishTime: string) => {
@@ -162,16 +170,38 @@ const parseBodyParamsTemplate = (captionPreview: string, publishDate: string, pu
     );
 };
 
-const getTemplateRetryWithoutComponents = () => {
-  const value = (process.env.WA_CONFIRMATION_TEMPLATE_RETRY_PLAIN || 'true').trim().toLowerCase();
-  return value !== 'false' && value !== '0' && value !== 'off' && value !== 'no';
-};
-
 const createPromptPreview = (caption: string) => {
   const trimmed = caption.trim();
   const max = 120;
   if (trimmed.length <= max) return trimmed;
   return `${trimmed.slice(0, max - 1).trimEnd()}...`;
+};
+
+const buildAssistedPromptText = (params: { captionPreview: string; publishDate: string; publishTime: string }) => {
+  const fallbackTemplate = [
+    'Scheduled WhatsApp status is ready.',
+    '{publish_date_line}',
+    '{publish_time_line}',
+    'Preview: {caption}',
+    'Reply YES to publish, or NO to skip.',
+  ].join('\n');
+  const rawTemplate = (process.env.WA_ASSISTED_CONFIRMATION_PROMPT_TEXT || fallbackTemplate).trim() || fallbackTemplate;
+  const publishDateLine = params.publishDate ? `Date: ${params.publishDate}` : '';
+  const publishTimeLine = params.publishTime ? `Time: ${params.publishTime}` : '';
+  return rawTemplate
+    .replace(/\{caption\}/gi, params.captionPreview)
+    .replace(/\{publish_date\}/gi, params.publishDate || '')
+    .replace(/\{publish_time\}/gi, params.publishTime || '')
+    .replace(/\{publish_date_line\}/gi, publishDateLine)
+    .replace(/\{publish_time_line\}/gi, publishTimeLine)
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+};
+
+const maskPhoneForLogs = (phone: string) => {
+  if (!phone) return '***';
+  if (phone.length <= 4) return '***';
+  return `${phone.slice(0, 3)}***${phone.slice(-2)}`;
 };
 
 const normalizeIntentText = (text: string) => {
@@ -433,92 +463,261 @@ const updateConfirmationState = async (
   `);
 };
 
+type AssistedConfirmationDeps = {
+  loadScheduledPostTime?: (scheduledPostId: string) => Promise<Date | null>;
+  loadOutboundByOperationKey?: (operationKey: string) => Promise<{
+    providerMessageId: string | null;
+    responseStatus: number | null;
+    requestId: string | null;
+  } | null>;
+  insertOutboundOperation?: (params: {
+    operationId: string;
+    operationKey: string;
+    recipientPhone: string;
+  }) => Promise<void>;
+  updateOutboundSent?: (params: {
+    operationKey: string;
+    status: number;
+    providerMessageId: string;
+    requestId: string;
+  }) => Promise<void>;
+  updateOutboundFailed?: (params: { operationKey: string; errorMessage: string }) => Promise<void>;
+  upsertConfirmationRecord?: (params: {
+    scheduledPostId: string;
+    recipientPhone: string;
+    promptMessageId: string;
+    caption: string;
+    mediaUrl: string;
+    mimeType?: string | null;
+    operationKey: string;
+  }) => Promise<void>;
+  sendPrompt?: typeof sendViaEarthcureWhatsAppWithRetry;
+};
+
 export const startAssistedConfirmationForScheduledPost = async (params: {
   scheduledPostId: string;
   caption: string;
   mediaUrl: string;
   mimeType?: string | null;
   recipientPhone?: string | null;
-}) => {
-  await ensureConfirmationsTable();
+  operationId?: string | null;
+}, deps: AssistedConfirmationDeps = {}) => {
+  const usesDefaultPersistence =
+    !deps.loadScheduledPostTime ||
+    !deps.loadOutboundByOperationKey ||
+    !deps.insertOutboundOperation ||
+    !deps.updateOutboundSent ||
+    !deps.updateOutboundFailed ||
+    !deps.upsertConfirmationRecord;
+  if (usesDefaultPersistence) {
+    await ensureConfirmationsTable();
+    await ensureOutboundOperationsTable();
+  }
   const recipientPhone = resolveRecipientPhone(params.recipientPhone);
+  const operationId = (params.operationId || `${params.scheduledPostId}:prompt`).trim();
+  const operationKey = `assisted-confirmation:${operationId}`;
 
-  const templateName = getConfirmationTemplateName();
-  if (!templateName) {
-    throw new Error(
-      'Missing confirmation template configuration. Set WA_CONFIRMATION_TEMPLATE_NAME (or WA_TEMPLATE_NAME).'
-    );
+  const loadScheduledPostTime =
+    deps.loadScheduledPostTime ||
+    (async (scheduledPostId: string) => {
+      const [scheduledPost] = await db
+        .select({ scheduledAt: scheduledPosts.scheduledAt })
+        .from(scheduledPosts)
+        .where(eq(scheduledPosts.id, scheduledPostId))
+        .limit(1);
+      return scheduledPost?.scheduledAt ?? null;
+    });
+  const loadOutboundByOperationKey =
+    deps.loadOutboundByOperationKey ||
+    (async (key: string) => {
+      const existingOutbound = await db.execute(sql`
+        SELECT provider_message_id, response_status, request_id
+        FROM whatsapp_outbound_operations
+        WHERE operation_key = ${key}
+        LIMIT 1
+      `);
+      const rows = Array.isArray((existingOutbound as any).rows) ? ((existingOutbound as any).rows as any[]) : [];
+      if (rows.length === 0) return null;
+      return {
+        providerMessageId: rows[0]?.provider_message_id ?? null,
+        responseStatus: rows[0]?.response_status ?? null,
+        requestId: rows[0]?.request_id ?? null,
+      };
+    });
+  const insertOutboundOperation =
+    deps.insertOutboundOperation ||
+    (async (input: { operationId: string; operationKey: string; recipientPhone: string }) => {
+      await db.execute(sql`
+        INSERT INTO whatsapp_outbound_operations (
+          id,
+          operation_id,
+          operation_key,
+          destination_phone,
+          source,
+          status,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          ${generateId()},
+          ${input.operationId},
+          ${input.operationKey},
+          ${input.recipientPhone},
+          'content_flow_assisted_publish',
+          'pending',
+          now(),
+          now()
+        )
+      `);
+    });
+  const updateOutboundSent =
+    deps.updateOutboundSent ||
+    (async (input: { operationKey: string; status: number; providerMessageId: string; requestId: string }) => {
+      await db.execute(sql`
+        UPDATE whatsapp_outbound_operations
+        SET status = 'sent',
+            response_status = ${input.status},
+            provider_message_id = ${input.providerMessageId},
+            request_id = ${input.requestId},
+            last_error = NULL,
+            updated_at = now()
+        WHERE operation_key = ${input.operationKey}
+      `);
+    });
+  const updateOutboundFailed =
+    deps.updateOutboundFailed ||
+    (async (input: { operationKey: string; errorMessage: string }) => {
+      await db.execute(sql`
+        UPDATE whatsapp_outbound_operations
+        SET status = 'failed',
+            last_error = ${input.errorMessage},
+            updated_at = now()
+        WHERE operation_key = ${input.operationKey}
+      `);
+    });
+  const upsertConfirmationRecord =
+    deps.upsertConfirmationRecord ||
+    (async (input: {
+      scheduledPostId: string;
+      recipientPhone: string;
+      promptMessageId: string;
+      caption: string;
+      mediaUrl: string;
+      mimeType?: string | null;
+      operationKey: string;
+    }) => {
+      await db.execute(sql`
+        INSERT INTO whatsapp_assisted_confirmations (
+          id,
+          scheduled_post_id,
+          recipient_phone,
+          prompt_message_id,
+          final_text,
+          media_url,
+          mime_type,
+          status,
+          outbound_operation_key,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          ${generateId()},
+          ${input.scheduledPostId},
+          ${input.recipientPhone},
+          ${input.promptMessageId},
+          ${input.caption},
+          ${input.mediaUrl},
+          ${input.mimeType ?? null},
+          'pending',
+          ${input.operationKey},
+          now(),
+          now()
+        )
+        ON CONFLICT (prompt_message_id) DO NOTHING
+      `);
+    });
+  const sendPrompt = deps.sendPrompt || sendViaEarthcureWhatsAppWithRetry;
+
+  const previewText = createPromptPreview(params.caption);
+  const scheduledAt = await loadScheduledPostTime(params.scheduledPostId);
+  const scheduledDate = scheduledAt ? scheduledAt.toISOString().slice(0, 10) : '';
+  const scheduledTime = scheduledAt ? scheduledAt.toISOString().slice(11, 16) : '';
+  const promptText = buildAssistedPromptText({
+    captionPreview: parseBodyParamsTemplate(previewText, scheduledDate, scheduledTime)[0] || previewText,
+    publishDate: scheduledDate,
+    publishTime: scheduledTime,
+  });
+
+  const existing = await loadOutboundByOperationKey(operationKey);
+  if (existing) {
+    if (existing.providerMessageId) {
+      logger.info('Assisted confirmation prompt deduped by operation id', {
+        requestId: existing.requestId ?? null,
+        operationId,
+        destination: maskPhoneForLogs(recipientPhone),
+        scheduledPostId: params.scheduledPostId,
+        responseStatus: existing.responseStatus ?? null,
+        providerMessageId: existing.providerMessageId,
+      });
+      await upsertConfirmationRecord({
+        scheduledPostId: params.scheduledPostId,
+        recipientPhone,
+        promptMessageId: existing.providerMessageId,
+        caption: params.caption,
+        mediaUrl: params.mediaUrl,
+        mimeType: params.mimeType ?? null,
+        operationKey,
+      });
+      return { promptMessageId: existing.providerMessageId };
+    }
+    throw new Error(`Assisted confirmation prompt already in progress for operation id ${operationId}`);
   }
 
-  const templateLang = getConfirmationTemplateLanguage();
-  const quickReplyButtons = parseQuickReplyButtons();
-  const previewText = createPromptPreview(params.caption);
-  const [scheduledPost] = await db
-    .select({ scheduledAt: scheduledPosts.scheduledAt })
-    .from(scheduledPosts)
-    .where(eq(scheduledPosts.id, params.scheduledPostId))
-    .limit(1);
-  const scheduledDate = scheduledPost?.scheduledAt ? scheduledPost.scheduledAt.toISOString().slice(0, 10) : '';
-  const scheduledTime = scheduledPost?.scheduledAt ? scheduledPost.scheduledAt.toISOString().slice(11, 16) : '';
-  const bodyParams = parseBodyParamsTemplate(previewText, scheduledDate, scheduledTime);
+  await insertOutboundOperation({ operationId, operationKey, recipientPhone });
 
-  let prompt;
   try {
-    prompt = await sendWhatsAppTemplate({
-      name: templateName,
-      language: templateLang,
-      bodyParams,
-      quickReplyButtons,
-      recipientPhone,
+    const prompt = await sendPrompt({
+      to: recipientPhone,
+      body: promptText,
+      source: 'content_flow_assisted_publish',
+      message_type: 'text',
+      operationId,
+      maxAttempts: 2,
     });
+    await updateOutboundSent({
+      operationKey,
+      status: prompt.status,
+      providerMessageId: prompt.providerMessageId,
+      requestId: prompt.requestId,
+    });
+    await upsertConfirmationRecord({
+      scheduledPostId: params.scheduledPostId,
+      recipientPhone,
+      promptMessageId: prompt.providerMessageId,
+      caption: params.caption,
+      mediaUrl: params.mediaUrl,
+      mimeType: params.mimeType ?? null,
+      operationKey,
+    });
+    logger.info('Assisted confirmation prompt sent via Earthcure bridge', {
+      requestId: prompt.requestId,
+      operationId,
+      destination: maskPhoneForLogs(recipientPhone),
+      responseStatus: prompt.status,
+      providerMessageId: prompt.providerMessageId,
+    });
+    return { promptMessageId: prompt.providerMessageId };
   } catch (error) {
     const messageText = error instanceof Error ? error.message : String(error);
-    const shouldRetryPlain = getTemplateRetryWithoutComponents();
-    const parameterMismatch = messageText.includes('code=132000');
-    if (!shouldRetryPlain || !parameterMismatch) {
-      throw error;
-    }
-    logger.warn('Retrying confirmation template without components due to parameter mismatch', {
+    await updateOutboundFailed({ operationKey, errorMessage: messageText });
+    logger.error('Assisted confirmation prompt failed via Earthcure bridge', {
+      operationId,
       scheduledPostId: params.scheduledPostId,
-      templateName,
-      templateLang,
-      reason: messageText,
+      destination: maskPhoneForLogs(recipientPhone),
+      error: messageText,
     });
-    prompt = await sendWhatsAppTemplate({
-      name: templateName,
-      language: templateLang,
-      recipientPhone,
-    });
+    throw error;
   }
-
-  await db.execute(sql`
-    INSERT INTO whatsapp_assisted_confirmations (
-      id,
-      scheduled_post_id,
-      recipient_phone,
-      prompt_message_id,
-      final_text,
-      media_url,
-      mime_type,
-      status,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      ${generateId()},
-      ${params.scheduledPostId},
-      ${recipientPhone},
-      ${prompt.messageId},
-      ${params.caption},
-      ${params.mediaUrl},
-      ${params.mimeType ?? null},
-      'pending',
-      now(),
-      now()
-    )
-  `);
-
-  return { promptMessageId: prompt.messageId };
 };
 
 const handleAffirmativeReply = async (pending: PendingConfirmation, now: Date, replyPhone?: string | null) => {
