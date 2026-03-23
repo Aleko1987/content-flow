@@ -97,6 +97,14 @@ const resolveBridgeConfig = () => {
 const parseErrorBody = (payload: unknown): string => {
   if (!payload || typeof payload !== 'object') return '';
   const record = payload as Record<string, unknown>;
+  const errorValue = record['error'];
+  if (errorValue && typeof errorValue === 'object') {
+    const nested = errorValue as Record<string, unknown>;
+    const nestedMessage = nested['message'];
+    if (typeof nestedMessage === 'string' && nestedMessage.trim()) {
+      return nestedMessage.trim();
+    }
+  }
   const candidates = ['error', 'message', 'details'];
   for (const key of candidates) {
     const value = record[key];
@@ -298,7 +306,7 @@ export const sendViaEarthcureWhatsApp = async (params: SendViaEarthcureParams): 
 export const sendViaEarthcureWhatsAppWithRetry = async (
   params: SendViaEarthcureParams & { operationId: string; maxAttempts?: number }
 ): Promise<EarthcureSendResult> => {
-  const maxAttempts = Math.max(1, Math.min(3, params.maxAttempts ?? 2));
+  const maxAttempts = Math.max(1, Math.min(4, params.maxAttempts ?? 3));
   let attempt = 0;
   let lastError: unknown;
   while (attempt < maxAttempts) {
@@ -328,7 +336,10 @@ export const sendViaEarthcureWhatsAppWithRetry = async (
       if (!canRetry || attempt >= maxAttempts) {
         throw error;
       }
-      await new Promise((resolve) => setTimeout(resolve, attempt * 250));
+      const baseDelayMs = 500;
+      const backoffMs = Math.min(3000, baseDelayMs * Math.pow(2, Math.max(0, attempt - 1)));
+      const jitterMs = Math.floor(Math.random() * 250);
+      await new Promise((resolve) => setTimeout(resolve, backoffMs + jitterMs));
     }
   }
 

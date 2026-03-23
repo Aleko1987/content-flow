@@ -742,7 +742,7 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
       source: 'content_flow_assisted_publish',
       message_type: 'text',
       operationId,
-      maxAttempts: 2,
+      maxAttempts: 3,
     });
     await updateOutboundSent({
       operationKey,
@@ -946,7 +946,7 @@ const handleAffirmativeReply = async (
         filename: messageType === 'document' ? item.fileName || undefined : undefined,
         source: 'content_flow_assisted_publish_execute',
         operationId,
-        maxAttempts: 2,
+        maxAttempts: 3,
       });
       providerMessageIds.push(result.providerMessageId);
     }
@@ -958,7 +958,7 @@ const handleAffirmativeReply = async (
         message_type: 'text',
         source: 'content_flow_assisted_publish_execute',
         operationId: `assisted-publish:${pending.id}:${inboundProviderMessageId || 'unknown'}:tail-text`,
-        maxAttempts: 2,
+        maxAttempts: 3,
       });
       providerMessageIds.push(textResult.providerMessageId);
     }
