@@ -209,6 +209,8 @@ const maskPhoneForLogs = (phone: string) => {
   return `${phone.slice(0, 3)}***${phone.slice(-2)}`;
 };
 
+const isSendableMediaLink = (value: string) => /^https?:\/\//i.test(value.trim());
+
 const PUBLISHING_STATUS = 'publishing';
 const PUBLISHED_STATUS = 'published';
 const RETRYABLE_FAILED_STATUS = 'failed_with_reason';
@@ -821,7 +823,10 @@ const loadPublishMediaQueue = async (pending: PendingConfirmation) => {
     .from(scheduledPostMedia)
     .where(eq(scheduledPostMedia.scheduledPostId, pending.scheduled_post_id));
   const valid = rows
-    .filter((row) => !!(row.storageUrl || '').trim())
+    .filter((row) => {
+      const storageUrl = (row.storageUrl || '').trim();
+      return !!storageUrl && isSendableMediaLink(storageUrl);
+    })
     .map((row) => ({
       mediaUrl: (row.storageUrl || '').trim(),
       mimeType: (row.mimeType || '').trim() || null,
@@ -836,7 +841,7 @@ const loadPublishMediaQueue = async (pending: PendingConfirmation) => {
       mediaType: null,
       fileName: null,
     },
-  ].filter((row) => !!row.mediaUrl);
+  ].filter((row) => !!row.mediaUrl && isSendableMediaLink(row.mediaUrl));
 };
 
 const handleAffirmativeReply = async (
