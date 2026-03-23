@@ -228,3 +228,106 @@ test('duplicate assisted confirmation operation id is deduped', async () => {
   assert.equal(promptSendCount, 1);
   assert.equal(outboundInsertCount, 1);
 });
+
+test('interactive list_reply confirmation text is normalized and triggers publish once', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.list.1',
+                  from: '15550002222',
+                  interactive: {
+                    list_reply: { id: 'confirm_choice', title: 'Confirm' },
+                  },
+                  context: { id: 'prompt-list-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-list-1',
+        scheduled_post_id: 'scheduled-list-1',
+        recipient_phone: '15550002222',
+        prompt_message_id: 'prompt-list-1',
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-list-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 1);
+  assert.equal(confirmActions, 1);
+});
+
+test('affirmative execution failure calls retryable failure handler once', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let failureCalls = 0;
+  let failureProviderMessageId: string | null = null;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.fail.1',
+                  from: '15550003333',
+                  text: { body: 'confirm' },
+                  context: { id: 'prompt-fail-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-fail-1',
+        scheduled_post_id: 'scheduled-fail-1',
+        recipient_phone: '15550003333',
+        prompt_message_id: 'prompt-fail-1',
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-fail-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      throw new Error('forced media send failure');
+    },
+    onAffirmativeFailure: async (_pending, _now, _messageText, providerMessageId) => {
+      failureCalls += 1;
+      failureProviderMessageId = providerMessageId || null;
+    },
+  });
+
+  assert.equal(result.failed, 1);
+  assert.equal(failureCalls, 1);
+  assert.equal(failureProviderMessageId, 'wamid.fail.1');
+});

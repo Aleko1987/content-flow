@@ -104,3 +104,73 @@ test('sendViaEarthcureWhatsApp validates invalid number/body inputs', async () =
     }
   );
 });
+
+test('sendViaEarthcureWhatsApp sends media payload with caption', async () => {
+  const { sendViaEarthcureWhatsApp } = await modulePromise;
+  process.env.CONTENT_FLOW_FORWARD_TOKEN = 'shared-secret';
+  process.env.EARTHCURE_WHATSAPP_SEND_URL = 'https://example.com/bridge';
+
+  let sentBody: Record<string, unknown> | null = null;
+  globalThis.fetch = (async (_url, init) => {
+    sentBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        conversation_id: 'conv-media',
+        provider_message_id: 'wamid.media1',
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  const result = await sendViaEarthcureWhatsApp({
+    to: '+27690218940',
+    message_type: 'image',
+    media_link: 'https://example.com/a.jpg',
+    caption: 'Caption',
+    source: 'content_flow_assisted_publish_execute',
+  });
+
+  assert.equal(result.providerMessageId, 'wamid.media1');
+  assert.equal(sentBody?.message_type, 'image');
+  assert.equal(sentBody?.media_link, 'https://example.com/a.jpg');
+  assert.equal(sentBody?.caption, 'Caption');
+});
+
+test('sendViaEarthcureWhatsAppWithRetry retries transient failures once', async () => {
+  const { sendViaEarthcureWhatsAppWithRetry } = await modulePromise;
+  process.env.CONTENT_FLOW_FORWARD_TOKEN = 'shared-secret';
+  process.env.EARTHCURE_WHATSAPP_SEND_URL = 'https://example.com/bridge';
+
+  let attempts = 0;
+  globalThis.fetch = (async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return {
+        ok: false,
+        status: 502,
+        json: async () => ({ error: 'upstream failure' }),
+      } as Response;
+    }
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        ok: true,
+        conversation_id: 'conv-retry',
+        provider_message_id: 'wamid.retry1',
+      }),
+    } as Response;
+  }) as typeof fetch;
+
+  const result = await sendViaEarthcureWhatsAppWithRetry({
+    to: '+27690218940',
+    body: 'Retry me',
+    operationId: 'op-retry',
+    maxAttempts: 2,
+  });
+
+  assert.equal(attempts, 2);
+  assert.equal(result.providerMessageId, 'wamid.retry1');
+});

@@ -1,11 +1,10 @@
 import { eq } from 'drizzle-orm';
 import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { contentItems, scheduledPosts } from '../db/schema.js';
+import { contentItems, scheduledPostMedia, scheduledPosts } from '../db/schema.js';
 import { logger } from '../utils/logger.js';
 import { sendWhatsAppText } from './cloud-api.js';
 import { sendViaEarthcureWhatsAppWithRetry } from './earthcure-bridge.js';
-import { sendWhatsAppAssistedStatus } from './status-service.js';
 
 type IncomingWebhookPayload = {
   entry?: Array<{
@@ -43,6 +42,8 @@ type PendingConfirmation = {
 let ensureTablePromise: Promise<void> | null = null;
 let ensureInboundTablePromise: Promise<void> | null = null;
 let ensureOutboundsTablePromise: Promise<void> | null = null;
+const AWAITING_CONFIRMATION_STATUS = 'awaiting_whatsapp_confirmation';
+const LEGACY_PENDING_STATUS = 'pending';
 
 const generateId = (): string => {
   return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
@@ -75,7 +76,7 @@ const ensureConfirmationsTable = async () => {
           final_text TEXT NOT NULL,
           media_url TEXT NOT NULL,
           mime_type TEXT,
-          status TEXT NOT NULL DEFAULT 'pending',
+          status TEXT NOT NULL DEFAULT 'awaiting_whatsapp_confirmation',
           confirmed_at TIMESTAMPTZ,
           completed_at TIMESTAMPTZ,
           response_message_id TEXT,
@@ -91,6 +92,10 @@ const ensureConfirmationsTable = async () => {
       await db.execute(sql`
         ALTER TABLE whatsapp_assisted_confirmations
         ALTER COLUMN prompt_message_id DROP NOT NULL
+      `);
+      await db.execute(sql`
+        ALTER TABLE whatsapp_assisted_confirmations
+        ALTER COLUMN status SET DEFAULT 'awaiting_whatsapp_confirmation'
       `);
       await db.execute(sql`
         CREATE UNIQUE INDEX IF NOT EXISTS idx_whatsapp_assisted_prompt_message_id
@@ -204,6 +209,10 @@ const maskPhoneForLogs = (phone: string) => {
   return `${phone.slice(0, 3)}***${phone.slice(-2)}`;
 };
 
+const PUBLISHING_STATUS = 'publishing';
+const PUBLISHED_STATUS = 'published';
+const RETRYABLE_FAILED_STATUS = 'failed_with_reason';
+
 const normalizeIntentText = (text: string) => {
   return text
     .trim()
@@ -269,12 +278,19 @@ const extractReplyText = (message: Record<string, unknown>): string | null => {
   if (typeof buttonText === 'string' && buttonText.trim()) return buttonText;
 
   const interactive = message.interactive as
-    | { button_reply?: { id?: unknown; title?: unknown } }
+    | {
+        button_reply?: { id?: unknown; title?: unknown };
+        list_reply?: { id?: unknown; title?: unknown };
+      }
     | undefined;
   const replyId = interactive?.button_reply?.id;
   if (typeof replyId === 'string' && replyId.trim()) return replyId;
   const replyTitle = interactive?.button_reply?.title;
   if (typeof replyTitle === 'string' && replyTitle.trim()) return replyTitle;
+  const listReplyId = interactive?.list_reply?.id;
+  if (typeof listReplyId === 'string' && listReplyId.trim()) return listReplyId;
+  const listReplyTitle = interactive?.list_reply?.title;
+  if (typeof listReplyTitle === 'string' && listReplyTitle.trim()) return listReplyTitle;
 
   return null;
 };
@@ -415,7 +431,7 @@ const findPendingConfirmation = async (
       SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, final_text, media_url, mime_type
       FROM whatsapp_assisted_confirmations
       WHERE prompt_message_id = ${contextMessageId}
-        AND status = 'pending'
+        AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
       ORDER BY created_at DESC
       LIMIT 1
     `);
@@ -429,7 +445,7 @@ const findPendingConfirmation = async (
     SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, final_text, media_url, mime_type
     FROM whatsapp_assisted_confirmations
     WHERE recipient_phone = ${normalizedPhone}
-      AND status = 'pending'
+      AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
     ORDER BY created_at DESC
     LIMIT 1
   `);
@@ -628,7 +644,7 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
           ${input.caption},
           ${input.mediaUrl},
           ${input.mimeType ?? null},
-          'pending',
+          ${AWAITING_CONFIRMATION_STATUS},
           ${input.operationKey},
           now(),
           now()
@@ -720,43 +736,237 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   }
 };
 
-const handleAffirmativeReply = async (pending: PendingConfirmation, now: Date, replyPhone?: string | null) => {
+const getEarthcureMessageType = (params: { mimeType?: string | null; mediaType?: string | null }) => {
+  const mime = (params.mimeType || '').trim().toLowerCase();
+  const mediaType = (params.mediaType || '').trim().toLowerCase();
+  if (mime.startsWith('video/') || mediaType === 'video') return 'video' as const;
+  if (mime.startsWith('audio/')) return 'audio' as const;
+  if (mime.startsWith('application/') || mediaType === 'document') return 'document' as const;
+  return 'image' as const;
+};
+
+const trimCaptionForMedia = (value: string) => {
+  const text = value.trim();
+  const limit = 1024;
+  if (text.length <= limit) {
+    return { caption: text, overflowText: '' };
+  }
+  return {
+    caption: `${text.slice(0, Math.max(0, limit - 1)).trimEnd()}…`,
+    overflowText: text,
+  };
+};
+
+const claimPendingConfirmationForPublish = async (
+  confirmationId: string,
+  now: Date
+): Promise<'claimed' | 'already_in_progress_or_sent'> => {
+  await ensureConfirmationsTable();
+  const update = await db.execute(sql`
+    UPDATE whatsapp_assisted_confirmations
+    SET status = ${PUBLISHING_STATUS},
+        confirmed_at = ${now},
+        updated_at = now()
+    WHERE id = ${confirmationId}
+      AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
+    RETURNING id
+  `);
+  const rows = Array.isArray((update as any).rows) ? ((update as any).rows as Array<{ id?: string }>) : [];
+  return rows.length > 0 ? 'claimed' : 'already_in_progress_or_sent';
+};
+
+const claimInboundPublishOperation = async (params: {
+  pendingConfirmationId: string;
+  inboundProviderMessageId?: string | null;
+  recipientPhone: string;
+}): Promise<{ operationKey: string; claimed: boolean }> => {
+  await ensureOutboundOperationsTable();
+  const operationKey = `assisted-publish-inbound:${params.pendingConfirmationId}:${params.inboundProviderMessageId || 'no-provider-id'}`;
+  const insert = await db.execute(sql`
+    INSERT INTO whatsapp_outbound_operations (
+      id,
+      operation_id,
+      operation_key,
+      destination_phone,
+      source,
+      status,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${generateId()},
+      ${operationKey},
+      ${operationKey},
+      ${params.recipientPhone},
+      'content_flow_assisted_publish_execute_event',
+      'pending',
+      now(),
+      now()
+    )
+    ON CONFLICT (operation_key) DO NOTHING
+    RETURNING id
+  `);
+  const rows = Array.isArray((insert as any).rows) ? ((insert as any).rows as Array<{ id?: string }>) : [];
+  return { operationKey, claimed: rows.length > 0 };
+};
+
+const loadPublishMediaQueue = async (pending: PendingConfirmation) => {
+  const rows = await db
+    .select({
+      storageUrl: scheduledPostMedia.storageUrl,
+      mimeType: scheduledPostMedia.mimeType,
+      type: scheduledPostMedia.type,
+      fileName: scheduledPostMedia.fileName,
+    })
+    .from(scheduledPostMedia)
+    .where(eq(scheduledPostMedia.scheduledPostId, pending.scheduled_post_id));
+  const valid = rows
+    .filter((row) => !!(row.storageUrl || '').trim())
+    .map((row) => ({
+      mediaUrl: (row.storageUrl || '').trim(),
+      mimeType: (row.mimeType || '').trim() || null,
+      mediaType: (row.type || '').trim() || null,
+      fileName: (row.fileName || '').trim() || null,
+    }));
+  if (valid.length > 0) return valid;
+  return [
+    {
+      mediaUrl: (pending.media_url || '').trim(),
+      mimeType: (pending.mime_type || '').trim() || null,
+      mediaType: null,
+      fileName: null,
+    },
+  ].filter((row) => !!row.mediaUrl);
+};
+
+const handleAffirmativeReply = async (
+  pending: PendingConfirmation,
+  now: Date,
+  replyPhone?: string | null,
+  inboundProviderMessageId?: string | null
+) => {
   const recipientPhone = (replyPhone || '').trim() || pending.recipient_phone;
-  const result = await sendWhatsAppAssistedStatus({
-    text: pending.final_text,
-    mediaUrl: pending.media_url,
-    mimeType: pending.mime_type,
+  const inboundClaim = await claimInboundPublishOperation({
+    pendingConfirmationId: pending.id,
+    inboundProviderMessageId,
     recipientPhone,
   });
-  await updateConfirmationState(pending.id, {
-    status: 'sent',
-    confirmedAt: now,
-    completedAt: now,
-    responseMessageId: result.messageId,
-    lastError: null,
-  });
+  if (!inboundClaim.claimed) {
+    logger.info('Duplicate inbound confirmation publish operation ignored', {
+      confirmationId: pending.id,
+      scheduledPostId: pending.scheduled_post_id,
+      inboundProviderMessageId: inboundProviderMessageId || null,
+      operationKey: inboundClaim.operationKey,
+    });
+    return;
+  }
 
-  await db
-    .update(scheduledPosts)
-    .set({
-      status: 'published',
-      updatedAt: now,
-    })
-    .where(eq(scheduledPosts.id, pending.scheduled_post_id));
+  const claimResult = await claimPendingConfirmationForPublish(pending.id, now);
+  if (claimResult !== 'claimed') {
+    logger.info('Skipping duplicate assisted publish confirmation execution', {
+      confirmationId: pending.id,
+      scheduledPostId: pending.scheduled_post_id,
+      inboundProviderMessageId: inboundProviderMessageId || null,
+    });
+    await db.execute(sql`
+      UPDATE whatsapp_outbound_operations
+      SET status = 'sent',
+          response_status = 200,
+          provider_message_id = NULL,
+          request_id = NULL,
+          updated_at = now()
+      WHERE operation_key = ${inboundClaim.operationKey}
+    `);
+    return;
+  }
+  try {
+    const mediaQueue = await loadPublishMediaQueue(pending);
+    if (mediaQueue.length === 0) {
+      throw new Error('No queued WhatsApp media found for assisted publish execution');
+    }
 
-  const [post] = await db
-    .select({ contentItemId: scheduledPosts.contentItemId })
-    .from(scheduledPosts)
-    .where(eq(scheduledPosts.id, pending.scheduled_post_id))
-    .limit(1);
-  if (post?.contentItemId) {
+    const providerMessageIds: string[] = [];
+    const captionParts = trimCaptionForMedia(pending.final_text || '');
+    for (let index = 0; index < mediaQueue.length; index += 1) {
+      const item = mediaQueue[index];
+      const messageType = getEarthcureMessageType({ mimeType: item.mimeType, mediaType: item.mediaType });
+      const operationId = `assisted-publish:${pending.id}:${inboundProviderMessageId || 'unknown'}:${index + 1}`;
+      const result = await sendViaEarthcureWhatsAppWithRetry({
+        to: recipientPhone,
+        message_type: messageType,
+        media_link: item.mediaUrl,
+        caption: index === 0 ? captionParts.caption : undefined,
+        filename: messageType === 'document' ? item.fileName || undefined : undefined,
+        source: 'content_flow_assisted_publish_execute',
+        operationId,
+        maxAttempts: 2,
+      });
+      providerMessageIds.push(result.providerMessageId);
+    }
+
+    if (captionParts.overflowText && captionParts.overflowText.length > captionParts.caption.length) {
+      const textResult = await sendViaEarthcureWhatsAppWithRetry({
+        to: recipientPhone,
+        body: captionParts.overflowText,
+        message_type: 'text',
+        source: 'content_flow_assisted_publish_execute',
+        operationId: `assisted-publish:${pending.id}:${inboundProviderMessageId || 'unknown'}:tail-text`,
+        maxAttempts: 2,
+      });
+      providerMessageIds.push(textResult.providerMessageId);
+    }
+
+    await db.execute(sql`
+      UPDATE whatsapp_outbound_operations
+      SET status = 'sent',
+          response_status = 200,
+          provider_message_id = ${providerMessageIds.join(',')},
+          request_id = NULL,
+          last_error = NULL,
+          updated_at = now()
+      WHERE operation_key = ${inboundClaim.operationKey}
+    `);
+
+    await updateConfirmationState(pending.id, {
+      status: PUBLISHED_STATUS,
+      confirmedAt: now,
+      completedAt: now,
+      responseMessageId: providerMessageIds.join(','),
+      lastError: null,
+    });
+
     await db
-      .update(contentItems)
+      .update(scheduledPosts)
       .set({
-        status: 'posted',
+        status: 'published',
         updatedAt: now,
       })
-      .where(eq(contentItems.id, post.contentItemId));
+      .where(eq(scheduledPosts.id, pending.scheduled_post_id));
+
+    const [post] = await db
+      .select({ contentItemId: scheduledPosts.contentItemId })
+      .from(scheduledPosts)
+      .where(eq(scheduledPosts.id, pending.scheduled_post_id))
+      .limit(1);
+    if (post?.contentItemId) {
+      await db
+        .update(contentItems)
+        .set({
+          status: 'posted',
+          updatedAt: now,
+        })
+        .where(eq(contentItems.id, post.contentItemId));
+    }
+  } catch (error) {
+    const messageText = error instanceof Error ? error.message : String(error);
+    await db.execute(sql`
+      UPDATE whatsapp_outbound_operations
+      SET status = 'failed',
+          last_error = ${messageText},
+          updated_at = now()
+      WHERE operation_key = ${inboundClaim.operationKey}
+    `);
+    throw error;
   }
 };
 
@@ -789,7 +999,12 @@ type ProcessorDeps = {
   updateInbound?: typeof updateInboundEventOutcome;
   onAffirmative?: typeof handleAffirmativeReply;
   onNegative?: typeof handleNegativeReply;
-  onAffirmativeFailure?: (pending: PendingConfirmation, now: Date, messageText: string) => Promise<void>;
+  onAffirmativeFailure?: (
+    pending: PendingConfirmation,
+    now: Date,
+    messageText: string,
+    inboundProviderMessageId?: string | null
+  ) => Promise<void>;
 };
 
 export const processIncomingConfirmationWebhook = async (
@@ -804,21 +1019,32 @@ export const processIncomingConfirmationWebhook = async (
   const onNegative = deps.onNegative || handleNegativeReply;
   const onAffirmativeFailure =
     deps.onAffirmativeFailure ||
-    (async (pending: PendingConfirmation, now: Date, messageText: string) => {
+    (async (
+      pending: PendingConfirmation,
+      now: Date,
+      messageText: string,
+      inboundProviderMessageId?: string | null
+    ) => {
       await updateConfirmationState(pending.id, {
-        status: 'failed',
+        status: RETRYABLE_FAILED_STATUS,
         confirmedAt: now,
-        completedAt: now,
+        completedAt: null,
         responseMessageId: null,
-        lastError: messageText,
+        lastError: `[retryable] ${messageText}`,
       });
       await db
         .update(scheduledPosts)
         .set({
-          status: 'failed',
+          status: 'queued',
           updatedAt: now,
         })
         .where(eq(scheduledPosts.id, pending.scheduled_post_id));
+      logger.warn('Assisted publish failed but marked retryable', {
+        scheduledPostId: pending.scheduled_post_id,
+        confirmationId: pending.id,
+        inboundProviderMessageId: inboundProviderMessageId || null,
+        error: messageText,
+      });
     });
 
   let processed = 0;
@@ -884,7 +1110,7 @@ export const processIncomingConfirmationWebhook = async (
 
     if (isAffirmativeReply(replyText)) {
       try {
-        await onAffirmative(pending, now, from);
+        await onAffirmative(pending, now, from, providerMessageId);
         confirmed += 1;
         await updateInbound(inboundEventId, {
           status: 'confirmed',
@@ -894,7 +1120,7 @@ export const processIncomingConfirmationWebhook = async (
       } catch (error) {
         const messageText = error instanceof Error ? error.message : String(error);
         failed += 1;
-        await onAffirmativeFailure(pending, now, messageText);
+        await onAffirmativeFailure(pending, now, messageText, providerMessageId);
         logger.error(`Failed to send confirmed WhatsApp assisted post ${pending.scheduled_post_id}: ${messageText}`);
         await updateInbound(inboundEventId, {
           status: 'failed',

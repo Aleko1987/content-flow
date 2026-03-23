@@ -1,13 +1,17 @@
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
 
-type EarthcureMessageType = 'text' | string;
+type EarthcureMessageType = 'text' | 'image' | 'video' | 'document' | 'audio' | string;
 
 type SendViaEarthcureParams = {
   to: string;
-  body: string;
+  body?: string;
   source?: string;
   message_type?: EarthcureMessageType;
+  media_link?: string;
+  media_id?: string;
+  caption?: string;
+  filename?: string;
 };
 
 type EarthcureSuccessResponse = {
@@ -107,16 +111,6 @@ export const sendViaEarthcureWhatsApp = async (params: SendViaEarthcureParams): 
   const requestId = randomUUID();
   const startedAt = Date.now();
   const to = normalizeDestination(params.to);
-  const body = (params.body || '').trim();
-  if (!body) {
-    throw new EarthcureWhatsAppError({
-      message: 'Missing required "body" for Earthcure WhatsApp outbound message',
-      kind: 'validation',
-      retryable: false,
-      requestId,
-    });
-  }
-
   let config;
   try {
     config = resolveBridgeConfig();
@@ -130,11 +124,37 @@ export const sendViaEarthcureWhatsApp = async (params: SendViaEarthcureParams): 
     });
   }
 
+  const messageType = (params.message_type || 'text').trim() || 'text';
+  const body = (params.body || '').trim();
+  const mediaLink = (params.media_link || '').trim();
+  const mediaId = (params.media_id || '').trim();
+  if (messageType === 'text') {
+    if (!body) {
+      throw new EarthcureWhatsAppError({
+        message: 'Missing required "body" for text Earthcure WhatsApp outbound message',
+        kind: 'validation',
+        retryable: false,
+        requestId,
+      });
+    }
+  } else if (!mediaLink && !mediaId) {
+    throw new EarthcureWhatsAppError({
+      message: `Missing required media_link or media_id for message_type=${messageType}`,
+      kind: 'validation',
+      retryable: false,
+      requestId,
+    });
+  }
+
   const payload = {
     to,
-    body,
+    ...(body ? { body } : {}),
     source: (params.source || 'content_flow').trim() || 'content_flow',
-    message_type: (params.message_type || 'text').trim() || 'text',
+    message_type: messageType,
+    ...(mediaLink ? { media_link: mediaLink } : {}),
+    ...(mediaId ? { media_id: mediaId } : {}),
+    ...((params.caption || '').trim() ? { caption: (params.caption || '').trim() } : {}),
+    ...((params.filename || '').trim() ? { filename: (params.filename || '').trim() } : {}),
   };
 
   const controller = new AbortController();
