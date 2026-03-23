@@ -135,9 +135,11 @@ test('sendViaEarthcureWhatsApp sends media payload with caption', async () => {
   });
 
   assert.equal(result.providerMessageId, 'wamid.media1');
-  assert.equal(sentBody?.message_type, 'image');
-  assert.equal(sentBody?.media_link, 'https://example.com/a.jpg');
-  assert.equal(sentBody?.caption, 'Caption');
+  assert.ok(sentBody);
+  const capturedBody = sentBody as { message_type?: string; media_link?: string; caption?: string };
+  assert.equal(capturedBody.message_type, 'image');
+  assert.equal(capturedBody.media_link, 'https://example.com/a.jpg');
+  assert.equal(capturedBody.caption, 'Caption');
 });
 
 test('sendViaEarthcureWhatsAppWithRetry retries transient failures once', async () => {
