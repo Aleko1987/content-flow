@@ -487,12 +487,15 @@ type AssistedConfirmationDeps = {
     providerMessageId: string | null;
     responseStatus: number | null;
     requestId: string | null;
+    status?: string | null;
+    updatedAt?: Date | string | null;
   } | null>;
   insertOutboundOperation?: (params: {
     operationId: string;
     operationKey: string;
     recipientPhone: string;
   }) => Promise<void>;
+  markOutboundOperationRetrying?: (params: { operationKey: string }) => Promise<void>;
   updateOutboundSent?: (params: {
     operationKey: string;
     status: number;
@@ -534,6 +537,7 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   const recipientPhone = resolveRecipientPhone(params.recipientPhone);
   const operationId = (params.operationId || `${params.scheduledPostId}:prompt`).trim();
   const operationKey = `assisted-confirmation:${operationId}`;
+  const stalePendingMs = Number(process.env.WA_ASSISTED_CONFIRMATION_PENDING_STALE_MS || 120000);
 
   const loadScheduledPostTime =
     deps.loadScheduledPostTime ||
@@ -549,7 +553,7 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
     deps.loadOutboundByOperationKey ||
     (async (key: string) => {
       const existingOutbound = await db.execute(sql`
-        SELECT provider_message_id, response_status, request_id
+        SELECT provider_message_id, response_status, request_id, status, updated_at
         FROM whatsapp_outbound_operations
         WHERE operation_key = ${key}
         LIMIT 1
@@ -560,6 +564,8 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
         providerMessageId: rows[0]?.provider_message_id ?? null,
         responseStatus: rows[0]?.response_status ?? null,
         requestId: rows[0]?.request_id ?? null,
+        status: rows[0]?.status ?? null,
+        updatedAt: rows[0]?.updated_at ?? null,
       };
     });
   const insertOutboundOperation =
@@ -609,6 +615,20 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
         UPDATE whatsapp_outbound_operations
         SET status = 'failed',
             last_error = ${input.errorMessage},
+            updated_at = now()
+        WHERE operation_key = ${input.operationKey}
+      `);
+    });
+  const markOutboundOperationRetrying =
+    deps.markOutboundOperationRetrying ||
+    (async (input: { operationKey: string }) => {
+      await db.execute(sql`
+        UPDATE whatsapp_outbound_operations
+        SET status = 'pending',
+            response_status = NULL,
+            provider_message_id = NULL,
+            request_id = NULL,
+            last_error = NULL,
             updated_at = now()
         WHERE operation_key = ${input.operationKey}
       `);
@@ -688,10 +708,32 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
       });
       return { promptMessageId: existing.providerMessageId };
     }
-    throw new Error(`Assisted confirmation prompt already in progress for operation id ${operationId}`);
+    const existingStatus = String(existing.status || '').trim().toLowerCase();
+    const updatedAtMs =
+      existing.updatedAt instanceof Date
+        ? existing.updatedAt.getTime()
+        : typeof existing.updatedAt === 'string' && existing.updatedAt
+          ? new Date(existing.updatedAt).getTime()
+          : Number.NaN;
+    const isStalePending =
+      existingStatus === 'pending' &&
+      Number.isFinite(updatedAtMs) &&
+      Date.now() - updatedAtMs >= Math.max(30000, stalePendingMs);
+    const canRetry = existingStatus === 'failed' || isStalePending;
+    if (!canRetry) {
+      throw new Error(`Assisted confirmation prompt already in progress for operation id ${operationId}`);
+    }
+    logger.warn('Retrying existing assisted confirmation prompt operation', {
+      operationId,
+      operationKey,
+      previousStatus: existingStatus || 'unknown',
+      stalePendingMs: isStalePending ? Date.now() - updatedAtMs : null,
+      destination: maskPhoneForLogs(recipientPhone),
+    });
+    await markOutboundOperationRetrying({ operationKey });
+  } else {
+    await insertOutboundOperation({ operationId, operationKey, recipientPhone });
   }
-
-  await insertOutboundOperation({ operationId, operationKey, recipientPhone });
 
   try {
     const prompt = await sendPrompt({
