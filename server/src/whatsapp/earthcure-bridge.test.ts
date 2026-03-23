@@ -70,8 +70,9 @@ test('sendViaEarthcureWhatsApp maps unauthorized token to non-retryable error', 
       }),
     (error: unknown) => {
       assert.equal(error instanceof EarthcureWhatsAppError, true);
-      assert.equal((error as EarthcureWhatsAppError).kind, 'unauthorized');
-      assert.equal((error as EarthcureWhatsAppError).retryable, false);
+      if (!(error instanceof EarthcureWhatsAppError)) return false;
+      assert.equal(error.kind, 'unauthorized');
+      assert.equal(error.retryable, false);
       return true;
     }
   );
@@ -99,7 +100,8 @@ test('sendViaEarthcureWhatsApp validates invalid number/body inputs', async () =
       }),
     (error: unknown) => {
       assert.equal(error instanceof EarthcureWhatsAppError, true);
-      assert.equal((error as EarthcureWhatsAppError).kind, 'validation');
+      if (!(error instanceof EarthcureWhatsAppError)) return false;
+      assert.equal(error.kind, 'validation');
       return true;
     }
   );
@@ -110,9 +112,9 @@ test('sendViaEarthcureWhatsApp sends media payload with caption', async () => {
   process.env.CONTENT_FLOW_FORWARD_TOKEN = 'shared-secret';
   process.env.EARTHCURE_WHATSAPP_SEND_URL = 'https://example.com/bridge';
 
-  let sentBody: Record<string, unknown> | null = null;
+  let sentBody: { message_type?: string; media_link?: string; caption?: string } | null = null;
   globalThis.fetch = (async (_url, init) => {
-    sentBody = JSON.parse(String(init?.body || '{}')) as Record<string, unknown>;
+    sentBody = JSON.parse(String(init?.body || '{}')) as { message_type?: string; media_link?: string; caption?: string };
     return {
       ok: true,
       status: 200,
