@@ -235,6 +235,7 @@ const normalizeIntentText = (text: string) => {
   return text
     .trim()
     .toLowerCase()
+    .replace(/[_-]+/g, ' ')
     .replace(/\s+/g, ' ')
     .replace(/[!?.;,:'"(){}\[\]]/g, '');
 };
@@ -268,7 +269,12 @@ export const isAffirmativeReply = (text: string) => {
   ];
   const fromEnv = parseIntentTokens((process.env.WA_CONFIRM_AFFIRMATIVE_TOKENS || '').trim());
   const accepted = new Set([...defaults, ...fromEnv]);
-  return accepted.has(value);
+  if (accepted.has(value)) return true;
+  // Common interactive/button payload forms from templates.
+  if (value === '0' || value === 'yes 0') return true;
+  const hasPositiveHint = /(confirm|publish|approved|approve|yes)/.test(value);
+  const hasNegativeHint = /(cancel|decline|skip|reschedule|no)/.test(value);
+  return hasPositiveHint && !hasNegativeHint;
 };
 
 const isNegativeReply = (text: string) => {
@@ -276,7 +282,9 @@ const isNegativeReply = (text: string) => {
   const defaults = ['no', 'n', 'cancel', 'skip'];
   const fromEnv = parseIntentTokens((process.env.WA_CONFIRM_NEGATIVE_TOKENS || '').trim());
   const accepted = new Set([...defaults, ...fromEnv]);
-  return accepted.has(value);
+  if (accepted.has(value)) return true;
+  if (value === '1' || value === 'no 1') return true;
+  return /(cancel|decline|skip|reschedule|no)/.test(value);
 };
 
 export const extractInboundMessagesFromWebhook = (payload: IncomingWebhookPayload) => {

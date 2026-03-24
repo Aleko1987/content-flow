@@ -330,6 +330,55 @@ test('interactive button reply with numeric id uses title intent', async () => {
   assert.equal(confirmActions, 1);
 });
 
+test('button payload confirmation token like CF_CONFIRM_YES triggers publish', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.payload.1',
+                  from: '15550005555',
+                  button: { payload: 'CF_CONFIRM_YES' },
+                  context: { id: 'prompt-payload-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-payload-1',
+        scheduled_post_id: 'scheduled-payload-1',
+        recipient_phone: '15550005555',
+        prompt_message_id: 'prompt-payload-1',
+        media_queue_json: [],
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-payload-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 1);
+  assert.equal(confirmActions, 1);
+});
+
 test('affirmative execution failure calls retryable failure handler once', async () => {
   const { processIncomingConfirmationWebhook } = await modulePromise;
 
