@@ -1244,6 +1244,16 @@ export const processIncomingConfirmationWebhook = async (
     const replyText = extractReplyText(message);
     const providerMessageId = extractProviderMessageId(message);
     const contextMessageId = extractContextMessageId(message);
+    const hasInteractiveReply =
+      !!message.button ||
+      !!(
+        message.interactive &&
+        typeof message.interactive === 'object' &&
+        (
+          !!(message.interactive as { button_reply?: unknown }).button_reply ||
+          !!(message.interactive as { list_reply?: unknown }).list_reply
+        )
+      );
 
     let inboundEventId: string | null = null;
     try {
@@ -1292,7 +1302,10 @@ export const processIncomingConfirmationWebhook = async (
     processed += 1;
     const now = new Date();
 
-    if (isAffirmativeReply(replyText)) {
+    const affirmativeByText = isAffirmativeReply(replyText);
+    const negativeByText = isNegativeReply(replyText);
+    const affirmativeByInteraction = hasInteractiveReply && !negativeByText;
+    if (affirmativeByText || affirmativeByInteraction) {
       try {
         await onAffirmative(pending, now, from, providerMessageId);
         confirmed += 1;
