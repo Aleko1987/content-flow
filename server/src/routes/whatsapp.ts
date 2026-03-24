@@ -51,6 +51,11 @@ router.post(
       scheduled_date?: string;
       scheduled_time?: string;
     };
+    logger.info('Received WhatsApp template test request', {
+      templateType: template_type || 'verification',
+      hasScheduledPostId: !!String(scheduled_post_id || '').trim(),
+      hasRecipientPhone: !!String(recipient_phone || '').trim(),
+    });
     const result = await sendWhatsAppVerificationTemplate({
       recipientPhone: recipient_phone || null,
       templateType: template_type || 'verification',

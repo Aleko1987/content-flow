@@ -1,8 +1,9 @@
-import { and, eq } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { channelVariants, contentItems, contentItemMedia, mediaAssets, publishLogs, publishTasks } from '../db/schema.js';
 import { sendWhatsAppMedia, sendWhatsAppTemplate, sendWhatsAppText } from './cloud-api.js';
 import { registerExternalConfirmationPromptForScheduledPost } from './assisted-confirmation.js';
+import { logger } from '../utils/logger.js';
 
 // Generate UUID (keep local to avoid circular deps)
 const generateId = (): string => {
@@ -34,6 +35,39 @@ const trimTo = (value: string, max: number) => {
   const head = value.slice(0, Math.max(0, max - 1)).trimEnd() + '…';
   const tail = value;
   return { head, tail };
+};
+
+const normalizePhone = (value: string) => value.replace(/[^\d]/g, '');
+
+const resolveScheduledPostIdForConfirmationTemplate = async (params: {
+  scheduledPostId?: string | null;
+  caption?: string | null;
+  recipientPhone?: string | null;
+}) => {
+  const explicit = String(params.scheduledPostId || '').trim();
+  if (explicit) return explicit;
+
+  const caption = String(params.caption || '').trim();
+  const recipient = normalizePhone(String(params.recipientPhone || ''));
+  const candidates = await db.execute(sql`
+    SELECT id, recipient_phone, caption, updated_at
+    FROM scheduled_posts
+    WHERE platforms::text ILIKE '%whatsapp_status%'
+      AND status IN ('planned', 'processing', 'queued', 'failed')
+      ${caption ? sql`AND caption = ${caption}` : sql``}
+    ORDER BY updated_at DESC
+    LIMIT 10
+  `);
+  const rows = Array.isArray((candidates as any).rows)
+    ? ((candidates as any).rows as Array<{ id: string; recipient_phone?: string | null; caption?: string | null }>)
+    : [];
+  if (rows.length === 0) return null;
+
+  if (recipient) {
+    const byPhone = rows.find((row) => normalizePhone(String(row.recipient_phone || '')) === recipient);
+    if (byPhone?.id) return byPhone.id;
+  }
+  return rows[0]?.id || null;
 };
 
 export const sendWhatsAppAssistedStatus = async (params: {
@@ -327,12 +361,27 @@ export const sendWhatsAppVerificationTemplate = async (params?: {
       recipientPhone,
     });
 
-    if (params?.scheduledPostId) {
+    const resolvedScheduledPostId = await resolveScheduledPostIdForConfirmationTemplate({
+      scheduledPostId: params?.scheduledPostId || null,
+      caption: caption || null,
+      recipientPhone,
+    });
+    if (resolvedScheduledPostId) {
       await registerExternalConfirmationPromptForScheduledPost({
-        scheduledPostId: params.scheduledPostId,
+        scheduledPostId: resolvedScheduledPostId,
         promptMessageId: result.messageId,
         caption: captionPreview,
         recipientPhone,
+      });
+      logger.info('Bound confirmation template test to pending scheduled post', {
+        scheduledPostId: resolvedScheduledPostId,
+        promptMessageId: result.messageId,
+        hasExplicitScheduledPostId: !!String(params?.scheduledPostId || '').trim(),
+      });
+    } else {
+      logger.warn('Confirmation template test sent without scheduled post binding', {
+        promptMessageId: result.messageId,
+        hasExplicitScheduledPostId: !!String(params?.scheduledPostId || '').trim(),
       });
     }
 
