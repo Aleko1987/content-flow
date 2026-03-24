@@ -61,8 +61,10 @@ EARTHCURE_WHATSAPP_SEND_URL=https://www.earthcurebiodiesel.com/.netlify/function
 # Optional timeout override (clamped to 5000-8000ms)
 EARTHCURE_WHATSAPP_TIMEOUT_MS=7000
 # Optional custom assisted prompt body text
-# Supports placeholders: {caption} {publish_date} {publish_time} {publish_date_line} {publish_time_line}
+# Supports placeholders: {caption} {publish_date} {publish_time} {publish_date_line} {publish_time_line} {confirmation_token}
 WA_ASSISTED_CONFIRMATION_PROMPT_TEXT=
+# Pending assisted prompt operations older than this are treated as stale/retryable
+WA_ASSISTED_CONFIRMATION_PENDING_STALE_MS=120000
 
 # Optional WhatsApp verification-template button config
 WA_VERIFICATION_TEMPLATE_NAME=hello_world
