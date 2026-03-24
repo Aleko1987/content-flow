@@ -50,24 +50,37 @@ const resolveScheduledPostIdForConfirmationTemplate = async (params: {
   const caption = String(params.caption || '').trim();
   const recipient = normalizePhone(String(params.recipientPhone || ''));
   const candidates = await db.execute(sql`
-    SELECT id, recipient_phone, caption, updated_at
+    SELECT id, recipient_phone, caption, channel_key, status, updated_at, scheduled_at
     FROM scheduled_posts
-    WHERE platforms::text ILIKE '%whatsapp_status%'
-      AND status IN ('planned', 'processing', 'queued', 'failed')
-      ${caption ? sql`AND caption = ${caption}` : sql``}
+    WHERE (
+      channel_key = 'whatsapp_status'
+      OR platforms @> '["whatsapp_status"]'::jsonb
+    )
     ORDER BY updated_at DESC
-    LIMIT 10
+    LIMIT 50
   `);
   const rows = Array.isArray((candidates as any).rows)
-    ? ((candidates as any).rows as Array<{ id: string; recipient_phone?: string | null; caption?: string | null }>)
+    ? ((candidates as any).rows as Array<{
+        id: string;
+        recipient_phone?: string | null;
+        caption?: string | null;
+        status?: string | null;
+      }>)
     : [];
   if (rows.length === 0) return null;
 
+  const normalizeCaption = (value: string) => value.trim().replace(/\s+/g, ' ').toLowerCase();
+  const normalizedCaption = caption ? normalizeCaption(caption) : '';
+  const captionFiltered = normalizedCaption
+    ? rows.filter((row) => normalizeCaption(String(row.caption || '')) === normalizedCaption)
+    : rows;
+
+  const pool = captionFiltered.length > 0 ? captionFiltered : rows;
   if (recipient) {
-    const byPhone = rows.find((row) => normalizePhone(String(row.recipient_phone || '')) === recipient);
+    const byPhone = pool.find((row) => normalizePhone(String(row.recipient_phone || '')) === recipient);
     if (byPhone?.id) return byPhone.id;
   }
-  return rows[0]?.id || null;
+  return pool[0]?.id || null;
 };
 
 export const sendWhatsAppAssistedStatus = async (params: {
@@ -382,6 +395,8 @@ export const sendWhatsAppVerificationTemplate = async (params?: {
       logger.warn('Confirmation template test sent without scheduled post binding', {
         promptMessageId: result.messageId,
         hasExplicitScheduledPostId: !!String(params?.scheduledPostId || '').trim(),
+        captionProvided: !!caption,
+        hasRecipientPhone: !!recipientPhone,
       });
     }
 
