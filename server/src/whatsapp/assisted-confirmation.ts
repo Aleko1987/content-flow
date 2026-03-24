@@ -47,6 +47,14 @@ type MediaQueueItem = {
   fileName: string | null;
 };
 
+type ReplyShapeType = 'text' | 'button' | 'interactive' | 'button_reply' | 'list_reply' | 'reply' | 'body' | 'unknown';
+
+type ReplyExtraction = {
+  replyText: string | null;
+  shapeType: ReplyShapeType;
+  sourcePath: string | null;
+};
+
 let ensureTablePromise: Promise<void> | null = null;
 let ensureInboundTablePromise: Promise<void> | null = null;
 let ensureOutboundsTablePromise: Promise<void> | null = null;
@@ -247,6 +255,48 @@ const parseIntentTokens = (raw: string): string[] => {
     .filter(Boolean);
 };
 
+const hasText = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0;
+
+const parseButtonPayloadMap = () => {
+  return String(process.env.WA_CONFIRM_BUTTON_PAYLOAD_MAP || '')
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const [indexRaw, payloadRaw] = entry.split(':');
+      const index = Number.parseInt((indexRaw || '').trim(), 10);
+      const payload = (payloadRaw || '').trim();
+      if (Number.isNaN(index) || !payload) return null;
+      return { index, payload };
+    })
+    .filter((entry): entry is { index: number; payload: string } => !!entry);
+};
+
+const configuredAffirmativePayloads = () => {
+  const explicit = (process.env.WA_CONFIRM_YES_PAYLOAD || '').trim();
+  const mapped = parseButtonPayloadMap()
+    .filter((entry) => entry.index === 0)
+    .map((entry) => entry.payload);
+  return new Set([explicit, ...mapped].map((value) => value.trim()).filter(Boolean));
+};
+
+const configuredNegativePayloads = () => {
+  const mapped = parseButtonPayloadMap()
+    .filter((entry) => entry.index === 1)
+    .map((entry) => entry.payload);
+  return new Set(mapped.map((value) => value.trim()).filter(Boolean));
+};
+
+const matchesConfiguredPayload = (raw: string, configured: Set<string>) => {
+  if (!raw.trim()) return false;
+  const normalizedRaw = normalizeIntentText(raw);
+  for (const value of configured) {
+    if (!value) continue;
+    if (raw.trim().toLowerCase() === value.toLowerCase()) return true;
+    if (normalizedRaw === normalizeIntentText(value)) return true;
+  }
+  return false;
+};
 
 export const isAffirmativeReply = (text: string) => {
   const value = normalizeIntentText(text);
@@ -263,6 +313,7 @@ export const isAffirmativeReply = (text: string) => {
     'ship it',
     'go live',
     'do it',
+    'cf confirm yes',
     '👍',
     '👍🏽',
     '👍🏿',
@@ -272,19 +323,17 @@ export const isAffirmativeReply = (text: string) => {
   if (accepted.has(value)) return true;
   // Common interactive/button payload forms from templates.
   if (value === '0' || value === 'yes 0') return true;
-  const hasPositiveHint = /(confirm|publish|approved|approve|yes)/.test(value);
-  const hasNegativeHint = /(cancel|decline|skip|reschedule|no)/.test(value);
-  return hasPositiveHint && !hasNegativeHint;
+  return false;
 };
 
 const isNegativeReply = (text: string) => {
   const value = normalizeIntentText(text);
-  const defaults = ['no', 'n', 'cancel', 'skip'];
+  const defaults = ['no', 'n', 'cancel', 'skip', 'decline', 'cf confirm no'];
   const fromEnv = parseIntentTokens((process.env.WA_CONFIRM_NEGATIVE_TOKENS || '').trim());
   const accepted = new Set([...defaults, ...fromEnv]);
   if (accepted.has(value)) return true;
   if (value === '1' || value === 'no 1') return true;
-  return /(cancel|decline|skip|reschedule|no)/.test(value);
+  return false;
 };
 
 export const extractInboundMessagesFromWebhook = (payload: IncomingWebhookPayload) => {
@@ -294,14 +343,14 @@ export const extractInboundMessagesFromWebhook = (payload: IncomingWebhookPayloa
     .filter((message): message is Record<string, unknown> => !!message && typeof message === 'object');
 };
 
-const extractReplyText = (message: Record<string, unknown>): string | null => {
+const extractReplyDetails = (message: Record<string, unknown>): ReplyExtraction => {
   const textBody = (message.text as { body?: unknown } | undefined)?.body;
-  if (typeof textBody === 'string' && textBody.trim()) return textBody;
+  if (hasText(textBody)) return { replyText: textBody, shapeType: 'text', sourcePath: 'text.body' };
 
   const buttonText = (message.button as { text?: unknown } | undefined)?.text;
-  if (typeof buttonText === 'string' && buttonText.trim()) return buttonText;
+  if (hasText(buttonText)) return { replyText: buttonText, shapeType: 'button', sourcePath: 'button.text' };
   const buttonPayload = (message.button as { payload?: unknown } | undefined)?.payload;
-  if (typeof buttonPayload === 'string' && buttonPayload.trim()) return buttonPayload;
+  if (hasText(buttonPayload)) return { replyText: buttonPayload, shapeType: 'button', sourcePath: 'button.payload' };
 
   const interactive = message.interactive as
     | {
@@ -310,34 +359,51 @@ const extractReplyText = (message: Record<string, unknown>): string | null => {
       }
     | undefined;
   const replyTitle = interactive?.button_reply?.title;
-  if (typeof replyTitle === 'string' && replyTitle.trim()) return replyTitle;
+  if (hasText(replyTitle)) return { replyText: replyTitle, shapeType: 'interactive', sourcePath: 'interactive.button_reply.title' };
   const replyId = interactive?.button_reply?.id;
-  if (typeof replyId === 'string' && replyId.trim()) return replyId;
+  if (hasText(replyId)) return { replyText: replyId, shapeType: 'interactive', sourcePath: 'interactive.button_reply.id' };
   const listReplyTitle = interactive?.list_reply?.title;
-  if (typeof listReplyTitle === 'string' && listReplyTitle.trim()) return listReplyTitle;
+  if (hasText(listReplyTitle)) {
+    return { replyText: listReplyTitle, shapeType: 'interactive', sourcePath: 'interactive.list_reply.title' };
+  }
   const listReplyId = interactive?.list_reply?.id;
-  if (typeof listReplyId === 'string' && listReplyId.trim()) return listReplyId;
+  if (hasText(listReplyId)) return { replyText: listReplyId, shapeType: 'interactive', sourcePath: 'interactive.list_reply.id' };
 
   const directButtonReply = message.button_reply as { id?: unknown; title?: unknown; text?: unknown } | undefined;
-  if (typeof directButtonReply?.title === 'string' && directButtonReply.title.trim()) return directButtonReply.title;
-  if (typeof directButtonReply?.text === 'string' && directButtonReply.text.trim()) return directButtonReply.text;
-  if (typeof directButtonReply?.id === 'string' && directButtonReply.id.trim()) return directButtonReply.id;
+  if (hasText(directButtonReply?.title)) {
+    return { replyText: directButtonReply.title, shapeType: 'button_reply', sourcePath: 'button_reply.title' };
+  }
+  if (hasText(directButtonReply?.text)) {
+    return { replyText: directButtonReply.text, shapeType: 'button_reply', sourcePath: 'button_reply.text' };
+  }
+  if (hasText(directButtonReply?.id)) {
+    return { replyText: directButtonReply.id, shapeType: 'button_reply', sourcePath: 'button_reply.id' };
+  }
 
   const directListReply = message.list_reply as { id?: unknown; title?: unknown; text?: unknown } | undefined;
-  if (typeof directListReply?.title === 'string' && directListReply.title.trim()) return directListReply.title;
-  if (typeof directListReply?.text === 'string' && directListReply.text.trim()) return directListReply.text;
-  if (typeof directListReply?.id === 'string' && directListReply.id.trim()) return directListReply.id;
+  if (hasText(directListReply?.title)) {
+    return { replyText: directListReply.title, shapeType: 'list_reply', sourcePath: 'list_reply.title' };
+  }
+  if (hasText(directListReply?.text)) {
+    return { replyText: directListReply.text, shapeType: 'list_reply', sourcePath: 'list_reply.text' };
+  }
+  if (hasText(directListReply?.id)) return { replyText: directListReply.id, shapeType: 'list_reply', sourcePath: 'list_reply.id' };
 
-  const genericReply = message.reply as { id?: unknown; title?: unknown; text?: unknown; payload?: unknown } | undefined;
-  if (typeof genericReply?.title === 'string' && genericReply.title.trim()) return genericReply.title;
-  if (typeof genericReply?.text === 'string' && genericReply.text.trim()) return genericReply.text;
-  if (typeof genericReply?.payload === 'string' && genericReply.payload.trim()) return genericReply.payload;
-  if (typeof genericReply?.id === 'string' && genericReply.id.trim()) return genericReply.id;
+  const genericReply = message.reply as
+    | { id?: unknown; title?: unknown; text?: unknown; payload?: unknown; body?: unknown }
+    | undefined;
+  if (hasText(genericReply?.title)) return { replyText: genericReply.title, shapeType: 'reply', sourcePath: 'reply.title' };
+  if (hasText(genericReply?.text)) return { replyText: genericReply.text, shapeType: 'reply', sourcePath: 'reply.text' };
+  if (hasText(genericReply?.payload)) {
+    return { replyText: genericReply.payload, shapeType: 'reply', sourcePath: 'reply.payload' };
+  }
+  if (hasText(genericReply?.id)) return { replyText: genericReply.id, shapeType: 'reply', sourcePath: 'reply.id' };
+  if (hasText(genericReply?.body)) return { replyText: genericReply.body, shapeType: 'reply', sourcePath: 'reply.body' };
 
   const body = message.body;
-  if (typeof body === 'string' && body.trim()) return body;
+  if (hasText(body)) return { replyText: body, shapeType: 'body', sourcePath: 'body' };
 
-  return null;
+  return { replyText: null, shapeType: 'unknown', sourcePath: null };
 };
 
 const synthesizeReplyTextFromInteractive = (message: Record<string, unknown>): string | null => {
@@ -345,6 +411,7 @@ const synthesizeReplyTextFromInteractive = (message: Record<string, unknown>): s
     !!message.button ||
     !!(message as { button_reply?: unknown }).button_reply ||
     !!(message as { list_reply?: unknown }).list_reply ||
+    !!(message as { reply?: unknown }).reply ||
     !!(
       message.interactive &&
       typeof message.interactive === 'object' &&
@@ -361,8 +428,46 @@ const synthesizeReplyTextFromInteractive = (message: Record<string, unknown>): s
   if (/(confirm|publish|approved|approve|\byes\b|\bok\b)/.test(raw)) {
     return 'confirm';
   }
-  // Last-resort for opaque interactive ids from approved templates.
-  return 'confirm';
+  return null;
+};
+
+const resolveInboundIntent = (params: {
+  replyText: string | null;
+  shapeType: ReplyShapeType;
+}): { intent: 'affirmative' | 'negative' | 'unmatched'; reason: string } => {
+  if (!params.replyText || !params.replyText.trim()) {
+    return { intent: 'unmatched', reason: 'empty-reply-text' };
+  }
+  const replyText = params.replyText.trim();
+  const affirmativePayloads = configuredAffirmativePayloads();
+  const negativePayloads = configuredNegativePayloads();
+
+  if (matchesConfiguredPayload(replyText, negativePayloads)) {
+    return { intent: 'negative', reason: 'matched-configured-negative-payload' };
+  }
+  if (matchesConfiguredPayload(replyText, affirmativePayloads)) {
+    return { intent: 'affirmative', reason: 'matched-configured-affirmative-payload' };
+  }
+  if (isNegativeReply(replyText)) {
+    return { intent: 'negative', reason: 'matched-negative-token' };
+  }
+  if (isAffirmativeReply(replyText)) {
+    return { intent: 'affirmative', reason: 'matched-affirmative-token' };
+  }
+  if (
+    (params.shapeType === 'interactive' || params.shapeType === 'button' || params.shapeType === 'button_reply') &&
+    normalizeIntentText(replyText) === '0'
+  ) {
+    return { intent: 'affirmative', reason: 'interactive-zero-button-id' };
+  }
+  if (
+    (params.shapeType === 'interactive' || params.shapeType === 'button' || params.shapeType === 'button_reply') &&
+    normalizeIntentText(replyText) === '1'
+  ) {
+    return { intent: 'negative', reason: 'interactive-one-button-id' };
+  }
+
+  return { intent: 'unmatched', reason: 'no-intent-token-match' };
 };
 
 const extractContextMessageId = (message: Record<string, unknown>): string | null => {
@@ -1302,19 +1407,11 @@ export const processIncomingConfirmationWebhook = async (
 
   for (const message of messages) {
     const from = typeof message.from === 'string' ? message.from : '';
-    let replyText = extractReplyText(message);
+    const replyDetails = extractReplyDetails(message);
+    let replyText = replyDetails.replyText;
     const providerMessageId = extractProviderMessageId(message);
     const contextMessageId = extractContextMessageId(message);
-    const hasInteractiveReply =
-      !!message.button ||
-      !!(
-        message.interactive &&
-        typeof message.interactive === 'object' &&
-        (
-          !!(message.interactive as { button_reply?: unknown }).button_reply ||
-          !!(message.interactive as { list_reply?: unknown }).list_reply
-        )
-      );
+    const detectedShapeType = replyDetails.shapeType;
 
     let inboundEventId: string | null = null;
     try {
@@ -1328,6 +1425,17 @@ export const processIncomingConfirmationWebhook = async (
       inboundEventId = inbound.eventId;
       if (inbound.duplicate) {
         duplicates += 1;
+        logger.info('WhatsApp inbound confirmation decision', {
+          providerMessageId,
+          from,
+          replyText: replyText || null,
+          shapeType: detectedShapeType,
+          replySourcePath: replyDetails.sourcePath,
+          contextMessageId,
+          pendingConfirmationId: null,
+          intent: 'duplicate',
+          reason: 'duplicate-provider-message-id',
+        });
         continue;
       }
     } catch (error) {
@@ -1339,10 +1447,20 @@ export const processIncomingConfirmationWebhook = async (
 
     if (!from) {
       ignored += 1;
+      logger.info('WhatsApp inbound confirmation decision', {
+        providerMessageId,
+        from: null,
+        replyText: replyText || null,
+        shapeType: detectedShapeType,
+        replySourcePath: replyDetails.sourcePath,
+        contextMessageId,
+        pendingConfirmationId: null,
+        intent: 'ignored',
+        reason: 'missing-from',
+      });
       await updateInbound(inboundEventId, { status: 'ignored' }).catch((error) => {
         logger.warn('Failed to update inbound event status=ignored', {
           providerMessageId,
-          hasInteractiveReply,
           error: error instanceof Error ? error.message : String(error),
         });
       });
@@ -1352,6 +1470,17 @@ export const processIncomingConfirmationWebhook = async (
     const pending = await findPending(from, contextMessageId);
     if (!pending) {
       unmatched += 1;
+      logger.info('WhatsApp inbound confirmation decision', {
+        providerMessageId,
+        from,
+        replyText: replyText || null,
+        shapeType: detectedShapeType,
+        replySourcePath: replyDetails.sourcePath,
+        contextMessageId,
+        pendingConfirmationId: null,
+        intent: 'unmatched',
+        reason: contextMessageId ? 'no-pending-for-context-or-phone' : 'no-pending-for-phone',
+      });
       await updateInbound(inboundEventId, { status: 'unmatched' }).catch((error) => {
         logger.warn('Failed to update inbound event status=unmatched', {
           providerMessageId,
@@ -1362,16 +1491,25 @@ export const processIncomingConfirmationWebhook = async (
     }
 
     if (!replyText) {
-      replyText = synthesizeReplyTextFromInteractive(message) || 'confirm';
+      replyText = synthesizeReplyTextFromInteractive(message);
     }
 
     processed += 1;
     const now = new Date();
+    const intentDecision = resolveInboundIntent({ replyText, shapeType: detectedShapeType });
+    logger.info('WhatsApp inbound confirmation decision', {
+      providerMessageId,
+      from,
+      replyText: replyText || null,
+      shapeType: detectedShapeType,
+      replySourcePath: replyDetails.sourcePath,
+      contextMessageId,
+      pendingConfirmationId: pending.id,
+      intent: intentDecision.intent,
+      reason: intentDecision.reason,
+    });
 
-    const affirmativeByText = isAffirmativeReply(replyText);
-    const negativeByText = isNegativeReply(replyText);
-    const affirmativeByInteraction = hasInteractiveReply && !negativeByText;
-    if (affirmativeByText || affirmativeByInteraction) {
+    if (intentDecision.intent === 'affirmative') {
       try {
         await onAffirmative(pending, now, from, providerMessageId);
         confirmed += 1;
@@ -1399,7 +1537,7 @@ export const processIncomingConfirmationWebhook = async (
       continue;
     }
 
-    if (isNegativeReply(replyText)) {
+    if (intentDecision.intent === 'negative') {
       declined += 1;
       try {
         await onNegative(pending, now, from);

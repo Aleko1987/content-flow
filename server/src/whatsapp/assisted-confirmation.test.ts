@@ -379,7 +379,7 @@ test('button payload confirmation token like CF_CONFIRM_YES triggers publish', a
   assert.equal(confirmActions, 1);
 });
 
-test('interactive button with opaque id defaults to affirmative', async () => {
+test('interactive button with opaque id confirms when title is affirmative', async () => {
   const { processIncomingConfirmationWebhook } = await modulePromise;
 
   let confirmActions = 0;
@@ -394,7 +394,7 @@ test('interactive button with opaque id defaults to affirmative', async () => {
                   id: 'wamid.button.opaque',
                   from: '15550006666',
                   interactive: {
-                    button_reply: { id: '0' },
+                    button_reply: { id: 'opaque-confirm-id-123', title: 'Confirm' },
                   },
                   context: { id: 'prompt-opaque-1' },
                 },
@@ -430,7 +430,7 @@ test('interactive button with opaque id defaults to affirmative', async () => {
   assert.equal(confirmActions, 1);
 });
 
-test('direct button_reply shape without interactive wrapper defaults affirmative', async () => {
+test('unknown opaque interactive id without affirmative token does not publish', async () => {
   const { processIncomingConfirmationWebhook } = await modulePromise;
 
   let confirmActions = 0;
@@ -442,10 +442,12 @@ test('direct button_reply shape without interactive wrapper defaults affirmative
             value: {
               messages: [
                 {
-                  id: 'wamid.directbutton.1',
+                  id: 'wamid.opaque.unmatched.1',
                   from: '15550007777',
-                  button_reply: { id: '0' },
-                  context: { id: 'prompt-direct-1' },
+                  interactive: {
+                    button_reply: { id: 'r4nd0m-opaque-template-token' },
+                  },
+                  context: { id: 'prompt-opaque-unmatched-1' },
                 },
               ],
             },
@@ -458,16 +460,16 @@ test('direct button_reply shape without interactive wrapper defaults affirmative
   const result = await processIncomingConfirmationWebhook(payload as any, {
     findPending: async () =>
       ({
-        id: 'confirmation-direct-1',
-        scheduled_post_id: 'scheduled-direct-1',
+        id: 'confirmation-opaque-unmatched-1',
+        scheduled_post_id: 'scheduled-opaque-unmatched-1',
         recipient_phone: '15550007777',
-        prompt_message_id: 'prompt-direct-1',
+        prompt_message_id: 'prompt-opaque-unmatched-1',
         media_queue_json: [],
         final_text: 'Caption',
         media_url: 'https://example.com/image.jpg',
         mime_type: 'image/jpeg',
       }) as any,
-    recordInbound: async () => ({ eventId: 'evt-direct-1', duplicate: false }),
+    recordInbound: async () => ({ eventId: 'evt-opaque-unmatched-1', duplicate: false }),
     updateInbound: async () => {},
     onAffirmative: async () => {
       confirmActions += 1;
@@ -475,8 +477,125 @@ test('direct button_reply shape without interactive wrapper defaults affirmative
     onAffirmativeFailure: async () => {},
   });
 
-  assert.equal(result.confirmed, 1);
-  assert.equal(confirmActions, 1);
+  assert.equal(result.confirmed, 0);
+  assert.equal(result.unmatched, 1);
+  assert.equal(confirmActions, 0);
+});
+
+test('direct button_reply shape without interactive wrapper and configured opaque payload confirms', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  const previousPayload = process.env.WA_CONFIRM_YES_PAYLOAD;
+  process.env.WA_CONFIRM_YES_PAYLOAD = 'opaque-template-yes-token';
+  try {
+    let confirmActions = 0;
+    const payload = {
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                messages: [
+                  {
+                    id: 'wamid.directbutton.1',
+                    from: '15550007777',
+                    button_reply: { id: 'opaque-template-yes-token' },
+                    context: { id: 'prompt-direct-1' },
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    };
+
+    const result = await processIncomingConfirmationWebhook(payload as any, {
+      findPending: async () =>
+        ({
+          id: 'confirmation-direct-1',
+          scheduled_post_id: 'scheduled-direct-1',
+          recipient_phone: '15550007777',
+          prompt_message_id: 'prompt-direct-1',
+          media_queue_json: [],
+          final_text: 'Caption',
+          media_url: 'https://example.com/image.jpg',
+          mime_type: 'image/jpeg',
+        }) as any,
+      recordInbound: async () => ({ eventId: 'evt-direct-1', duplicate: false }),
+      updateInbound: async () => {},
+      onAffirmative: async () => {
+        confirmActions += 1;
+      },
+      onAffirmativeFailure: async () => {},
+    });
+
+    assert.equal(result.confirmed, 1);
+    assert.equal(confirmActions, 1);
+  } finally {
+    if (previousPayload === undefined) {
+      delete process.env.WA_CONFIRM_YES_PAYLOAD;
+    } else {
+      process.env.WA_CONFIRM_YES_PAYLOAD = previousPayload;
+    }
+  }
+});
+
+test('negative template response declines and does not publish', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  let negativeActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.button.no.1',
+                  from: '15550009991',
+                  interactive: {
+                    button_reply: { id: 'decline_choice', title: 'No' },
+                  },
+                  context: { id: 'prompt-no-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-no-1',
+        scheduled_post_id: 'scheduled-no-1',
+        recipient_phone: '15550009991',
+        prompt_message_id: 'prompt-no-1',
+        media_queue_json: [],
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-no-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onNegative: async () => {
+      negativeActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 0);
+  assert.equal(result.declined, 1);
+  assert.equal(confirmActions, 0);
+  assert.equal(negativeActions, 1);
 });
 
 test('single recent pending fallback confirms when phone/context matching misses', async () => {
