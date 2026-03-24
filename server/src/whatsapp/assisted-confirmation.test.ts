@@ -60,6 +60,56 @@ test('valid token with inbound message processes confirmation', async () => {
   assert.equal(confirmActions, 1);
 });
 
+test('context-only interactive confirm without from still processes publish', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.ctx-only.1',
+                  interactive: {
+                    button_reply: { id: 'opaque-context-confirm-token' },
+                  },
+                  context: { id: 'prompt-ctx-only-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-ctx-only-1',
+        scheduled_post_id: 'scheduled-ctx-only-1',
+        recipient_phone: '15551112222',
+        prompt_message_id: 'prompt-ctx-only-1',
+        media_queue_json: [],
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-ctx-only-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 1);
+  assert.equal(confirmActions, 1);
+});
+
 test('invalid or missing token is rejected', async () => {
   const { validateForwardToken } = await modulePromise;
 

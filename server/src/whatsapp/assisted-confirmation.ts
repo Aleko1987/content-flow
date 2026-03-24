@@ -344,10 +344,26 @@ const isNegativeReply = (text: string) => {
 };
 
 export const extractInboundMessagesFromWebhook = (payload: IncomingWebhookPayload) => {
-  return (payload.entry || [])
+  const entryMessages = (payload.entry || [])
     .flatMap((entry) => entry.changes || [])
     .flatMap((change) => change.value?.messages || [])
     .filter((message): message is Record<string, unknown> => !!message && typeof message === 'object');
+
+  const root = payload as Record<string, unknown>;
+  const directMessages = [
+    ...(Array.isArray(root.messages) ? root.messages : []),
+    ...((root.value && typeof root.value === 'object' && Array.isArray((root.value as Record<string, unknown>).messages))
+      ? ((root.value as Record<string, unknown>).messages as unknown[])
+      : []),
+    ...((root.data && typeof root.data === 'object' && Array.isArray((root.data as Record<string, unknown>).messages))
+      ? ((root.data as Record<string, unknown>).messages as unknown[])
+      : []),
+  ].filter((message): message is Record<string, unknown> => !!message && typeof message === 'object');
+
+  const singleMessage = root.message;
+  const singleList = singleMessage && typeof singleMessage === 'object' ? [singleMessage as Record<string, unknown>] : [];
+
+  return [...entryMessages, ...directMessages, ...singleList];
 };
 
 const extractReplyDetails = (message: Record<string, unknown>): ReplyExtraction => {
@@ -1466,7 +1482,7 @@ export const processIncomingConfirmationWebhook = async (
       });
     }
 
-    if (!from) {
+    if (!from && !contextMessageId) {
       ignored += 1;
       logger.info('WhatsApp inbound confirmation decision', {
         providerMessageId,
