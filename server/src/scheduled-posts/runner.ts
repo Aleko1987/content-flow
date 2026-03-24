@@ -100,6 +100,7 @@ export const executePost = async (post: ScheduledPostRecord) => {
 
   let postedToAny = false;
   let queuedForConfirmation = false;
+  const executionAttemptId = `${post.id}:${Date.now()}`;
   let cachedMedia: Array<typeof scheduledPostMedia.$inferSelect> | null = null;
   const getMedia = async () => {
     if (cachedMedia) return cachedMedia;
@@ -203,6 +204,7 @@ export const executePost = async (post: ScheduledPostRecord) => {
           mediaUrl,
           mimeType: best?.mimeType || null,
           recipientPhone: post.recipientPhone ?? null,
+          operationId: `${executionAttemptId}:prompt`,
         });
         results.push({
           providerKey: 'whatsapp_status',
