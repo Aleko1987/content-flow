@@ -787,7 +787,11 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
       mimeType: params.mimeType ?? null,
       operationKey,
     });
-    if (error instanceof EarthcureWhatsAppError && error.retryable) {
+    const genericTransient = /timeout|timed out|HTTP 5\d\d|ECONNRESET|ENOTFOUND|EAI_AGAIN/i.test(messageText);
+    const retryableError =
+      (error instanceof EarthcureWhatsAppError && error.retryable) ||
+      (!(error instanceof EarthcureWhatsAppError) && genericTransient);
+    if (retryableError) {
       logger.warn('Assisted confirmation prompt send is retryable; continuing with phone-based pending confirmation', {
         operationId,
         scheduledPostId: params.scheduledPostId,
