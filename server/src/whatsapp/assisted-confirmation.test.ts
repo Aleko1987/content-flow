@@ -430,7 +430,7 @@ test('interactive button with opaque id confirms when title is affirmative', asy
   assert.equal(confirmActions, 1);
 });
 
-test('unknown opaque interactive id without affirmative token does not publish', async () => {
+test('unknown opaque interactive id with mismatched context does not publish', async () => {
   const { processIncomingConfirmationWebhook } = await modulePromise;
 
   let confirmActions = 0;
@@ -447,7 +447,7 @@ test('unknown opaque interactive id without affirmative token does not publish',
                   interactive: {
                     button_reply: { id: 'r4nd0m-opaque-template-token' },
                   },
-                  context: { id: 'prompt-opaque-unmatched-1' },
+                  context: { id: 'prompt-opaque-unmatched-1-other' },
                 },
               ],
             },
@@ -480,6 +480,57 @@ test('unknown opaque interactive id without affirmative token does not publish',
   assert.equal(result.confirmed, 0);
   assert.equal(result.unmatched, 1);
   assert.equal(confirmActions, 0);
+});
+
+test('unknown opaque interactive id with matching context confirms', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.opaque.contextmatch.1',
+                  from: '15550007778',
+                  interactive: {
+                    button_reply: { id: 'r4nd0m-opaque-template-token' },
+                  },
+                  context: { id: 'prompt-opaque-contextmatch-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-opaque-contextmatch-1',
+        scheduled_post_id: 'scheduled-opaque-contextmatch-1',
+        recipient_phone: '15550007778',
+        prompt_message_id: 'prompt-opaque-contextmatch-1',
+        media_queue_json: [],
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-opaque-contextmatch-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 1);
+  assert.equal(confirmActions, 1);
 });
 
 test('direct button_reply shape without interactive wrapper and configured opaque payload confirms', async () => {

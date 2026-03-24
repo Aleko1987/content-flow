@@ -298,6 +298,13 @@ const matchesConfiguredPayload = (raw: string, configured: Set<string>) => {
   return false;
 };
 
+const isInteractiveShape = (shapeType: ReplyShapeType) =>
+  shapeType === 'interactive' ||
+  shapeType === 'button' ||
+  shapeType === 'button_reply' ||
+  shapeType === 'list_reply' ||
+  shapeType === 'reply';
+
 export const isAffirmativeReply = (text: string) => {
   const value = normalizeIntentText(text);
   if (!value) return false;
@@ -434,7 +441,21 @@ const synthesizeReplyTextFromInteractive = (message: Record<string, unknown>): s
 const resolveInboundIntent = (params: {
   replyText: string | null;
   shapeType: ReplyShapeType;
+  contextMatchedPending: boolean;
 }): { intent: 'affirmative' | 'negative' | 'unmatched'; reason: string } => {
+  // If this inbound interactive message is explicitly replying to a pending prompt,
+  // treat it as affirmative unless we have a negative signal.
+  if (params.contextMatchedPending && isInteractiveShape(params.shapeType)) {
+    if (params.replyText && params.replyText.trim()) {
+      const replyText = params.replyText.trim();
+      const negativePayloads = configuredNegativePayloads();
+      if (matchesConfiguredPayload(replyText, negativePayloads) || isNegativeReply(replyText)) {
+        return { intent: 'negative', reason: 'context-matched-interactive-negative' };
+      }
+    }
+    return { intent: 'affirmative', reason: 'context-matched-interactive-default-affirmative' };
+  }
+
   if (!params.replyText || !params.replyText.trim()) {
     return { intent: 'unmatched', reason: 'empty-reply-text' };
   }
@@ -1496,7 +1517,13 @@ export const processIncomingConfirmationWebhook = async (
 
     processed += 1;
     const now = new Date();
-    const intentDecision = resolveInboundIntent({ replyText, shapeType: detectedShapeType });
+    const contextMatchedPending =
+      !!contextMessageId && !!pending.prompt_message_id && contextMessageId === pending.prompt_message_id;
+    const intentDecision = resolveInboundIntent({
+      replyText,
+      shapeType: detectedShapeType,
+      contextMatchedPending,
+    });
     logger.info('WhatsApp inbound confirmation decision', {
       providerMessageId,
       from,
@@ -1504,6 +1531,7 @@ export const processIncomingConfirmationWebhook = async (
       shapeType: detectedShapeType,
       replySourcePath: replyDetails.sourcePath,
       contextMessageId,
+      contextMatchedPending,
       pendingConfirmationId: pending.id,
       intent: intentDecision.intent,
       reason: intentDecision.reason,
