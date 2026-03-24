@@ -523,6 +523,23 @@ const findPendingConfirmation = async (
     return (byPhone as any).rows[0] as PendingConfirmation;
   }
 
+  // Fallback: if exactly one recent pending confirmation exists, allow it.
+  // This helps when upstream systems normalize reply phone/context inconsistently.
+  const recentPending = await db.execute(sql`
+    SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, media_queue_json, final_text, media_url, mime_type
+    FROM whatsapp_assisted_confirmations
+    WHERE status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
+      AND created_at >= now() - interval '6 hours'
+    ORDER BY created_at DESC
+    LIMIT 2
+  `);
+  const recentRows = Array.isArray((recentPending as any).rows)
+    ? ((recentPending as any).rows as PendingConfirmation[])
+    : [];
+  if (recentRows.length === 1) {
+    return recentRows[0];
+  }
+
   return null;
 };
 
@@ -1320,11 +1337,7 @@ export const processIncomingConfirmationWebhook = async (
       });
     }
 
-    if (!replyText) {
-      replyText = synthesizeReplyTextFromInteractive(message);
-    }
-
-    if (!from || !replyText) {
+    if (!from) {
       ignored += 1;
       await updateInbound(inboundEventId, { status: 'ignored' }).catch((error) => {
         logger.warn('Failed to update inbound event status=ignored', {
@@ -1346,6 +1359,10 @@ export const processIncomingConfirmationWebhook = async (
         });
       });
       continue;
+    }
+
+    if (!replyText) {
+      replyText = synthesizeReplyTextFromInteractive(message) || 'confirm';
     }
 
     processed += 1;

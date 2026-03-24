@@ -479,6 +479,57 @@ test('direct button_reply shape without interactive wrapper defaults affirmative
   assert.equal(confirmActions, 1);
 });
 
+test('single recent pending fallback confirms when phone/context matching misses', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.fallback.1',
+                  from: '15550008888',
+                  interactive: {
+                    button_reply: { id: 'opaque-id' },
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    // Simulate fallback selection path by always returning one pending.
+    findPending: async () =>
+      ({
+        id: 'confirmation-fallback-1',
+        scheduled_post_id: 'scheduled-fallback-1',
+        recipient_phone: '15550009999',
+        prompt_message_id: null,
+        media_queue_json: [],
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-fallback-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 1);
+  assert.equal(confirmActions, 1);
+});
+
 test('affirmative execution failure calls retryable failure handler once', async () => {
   const { processIncomingConfirmationWebhook } = await modulePromise;
 
