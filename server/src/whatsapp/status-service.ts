@@ -2,6 +2,7 @@ import { and, eq } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { channelVariants, contentItems, contentItemMedia, mediaAssets, publishLogs, publishTasks } from '../db/schema.js';
 import { sendWhatsAppMedia, sendWhatsAppTemplate, sendWhatsAppText } from './cloud-api.js';
+import { registerExternalConfirmationPromptForScheduledPost } from './assisted-confirmation.js';
 
 // Generate UUID (keep local to avoid circular deps)
 const generateId = (): string => {
@@ -235,6 +236,7 @@ export const sendWhatsAppStatusForPublishTask = async (params: {
 export const sendWhatsAppVerificationTemplate = async (params?: {
   recipientPhone?: string | null;
   templateType?: 'verification' | 'confirmation';
+  scheduledPostId?: string | null;
   caption?: string | null;
   scheduledDate?: string | null;
   scheduledTime?: string | null;
@@ -324,6 +326,15 @@ export const sendWhatsAppVerificationTemplate = async (params?: {
       quickReplyButtons,
       recipientPhone,
     });
+
+    if (params?.scheduledPostId) {
+      await registerExternalConfirmationPromptForScheduledPost({
+        scheduledPostId: params.scheduledPostId,
+        promptMessageId: result.messageId,
+        caption: captionPreview,
+        recipientPhone,
+      });
+    }
 
     return {
       messageId: result.messageId,

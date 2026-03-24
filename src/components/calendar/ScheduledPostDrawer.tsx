@@ -198,6 +198,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     try {
       const result = await apiClient.whatsapp.sendVerificationTemplate({
         templateType: 'confirmation',
+        scheduledPostId: post?.id,
         caption,
         scheduledDate: date,
         scheduledTime: time,

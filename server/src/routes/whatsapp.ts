@@ -43,9 +43,10 @@ router.post(
 router.post(
   '/send-verification-template',
   asyncHandler(async (req: Request, res: Response) => {
-    const { recipient_phone, template_type, caption, scheduled_date, scheduled_time } = req.body as {
+    const { recipient_phone, template_type, scheduled_post_id, caption, scheduled_date, scheduled_time } = req.body as {
       recipient_phone?: string;
       template_type?: 'verification' | 'confirmation';
+      scheduled_post_id?: string;
       caption?: string;
       scheduled_date?: string;
       scheduled_time?: string;
@@ -53,6 +54,7 @@ router.post(
     const result = await sendWhatsAppVerificationTemplate({
       recipientPhone: recipient_phone || null,
       templateType: template_type || 'verification',
+      scheduledPostId: scheduled_post_id || null,
       caption: caption || null,
       scheduledDate: scheduled_date || null,
       scheduledTime: scheduled_time || null,

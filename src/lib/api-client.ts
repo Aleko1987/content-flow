@@ -154,6 +154,7 @@ export const apiClient = {
     sendVerificationTemplate: (options?: {
       recipientPhone?: string;
       templateType?: 'verification' | 'confirmation';
+      scheduledPostId?: string;
       caption?: string;
       scheduledDate?: string;
       scheduledTime?: string;
@@ -164,6 +165,7 @@ export const apiClient = {
         body: JSON.stringify({
           recipient_phone: options?.recipientPhone || null,
           template_type: options?.templateType || 'verification',
+          scheduled_post_id: options?.scheduledPostId || null,
           caption: options?.caption || null,
           scheduled_date: options?.scheduledDate || null,
           scheduled_time: options?.scheduledTime || null,

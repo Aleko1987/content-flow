@@ -1150,6 +1150,73 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   }
 };
 
+export const registerExternalConfirmationPromptForScheduledPost = async (params: {
+  scheduledPostId: string;
+  promptMessageId: string;
+  caption: string;
+  recipientPhone?: string | null;
+  fallbackMediaUrl?: string | null;
+  fallbackMimeType?: string | null;
+}) => {
+  await ensureConfirmationsTable();
+  const recipientPhone = resolveRecipientPhone(params.recipientPhone);
+  const operationKey = `assisted-confirmation:external:${params.scheduledPostId}`;
+  const mediaQueue = await buildMediaSnapshotForScheduledPost({
+    scheduledPostId: params.scheduledPostId,
+    fallbackMediaUrl: (params.fallbackMediaUrl || '').trim(),
+    fallbackMimeType: params.fallbackMimeType ?? null,
+  });
+  if (mediaQueue.length === 0) {
+    throw new Error('No sendable media snapshot found for external confirmation prompt');
+  }
+
+  const first = mediaQueue[0];
+  const mediaQueueJson = JSON.stringify(mediaQueue);
+  await db.execute(sql`
+    INSERT INTO whatsapp_assisted_confirmations (
+      id,
+      scheduled_post_id,
+      recipient_phone,
+      prompt_message_id,
+      media_queue_json,
+      final_text,
+      media_url,
+      mime_type,
+      status,
+      outbound_operation_key,
+      created_at,
+      updated_at
+    )
+    VALUES (
+      ${generateId()},
+      ${params.scheduledPostId},
+      ${recipientPhone},
+      ${params.promptMessageId},
+      ${mediaQueueJson}::jsonb,
+      ${params.caption},
+      ${first.mediaUrl},
+      ${first.mimeType ?? null},
+      ${AWAITING_CONFIRMATION_STATUS},
+      ${operationKey},
+      now(),
+      now()
+    )
+    ON CONFLICT (outbound_operation_key) DO UPDATE
+    SET recipient_phone = EXCLUDED.recipient_phone,
+        prompt_message_id = EXCLUDED.prompt_message_id,
+        media_queue_json = EXCLUDED.media_queue_json,
+        final_text = EXCLUDED.final_text,
+        media_url = EXCLUDED.media_url,
+        mime_type = EXCLUDED.mime_type,
+        status = ${AWAITING_CONFIRMATION_STATUS},
+        confirmed_at = NULL,
+        completed_at = NULL,
+        response_message_id = NULL,
+        last_error = NULL,
+        updated_at = now()
+  `);
+};
+
 const getEarthcureMessageType = (params: { mimeType?: string | null; mediaType?: string | null }) => {
   const mime = (params.mimeType || '').trim().toLowerCase();
   const mediaType = (params.mediaType || '').trim().toLowerCase();
