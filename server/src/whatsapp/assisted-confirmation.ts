@@ -318,7 +318,51 @@ const extractReplyText = (message: Record<string, unknown>): string | null => {
   const listReplyId = interactive?.list_reply?.id;
   if (typeof listReplyId === 'string' && listReplyId.trim()) return listReplyId;
 
+  const directButtonReply = message.button_reply as { id?: unknown; title?: unknown; text?: unknown } | undefined;
+  if (typeof directButtonReply?.title === 'string' && directButtonReply.title.trim()) return directButtonReply.title;
+  if (typeof directButtonReply?.text === 'string' && directButtonReply.text.trim()) return directButtonReply.text;
+  if (typeof directButtonReply?.id === 'string' && directButtonReply.id.trim()) return directButtonReply.id;
+
+  const directListReply = message.list_reply as { id?: unknown; title?: unknown; text?: unknown } | undefined;
+  if (typeof directListReply?.title === 'string' && directListReply.title.trim()) return directListReply.title;
+  if (typeof directListReply?.text === 'string' && directListReply.text.trim()) return directListReply.text;
+  if (typeof directListReply?.id === 'string' && directListReply.id.trim()) return directListReply.id;
+
+  const genericReply = message.reply as { id?: unknown; title?: unknown; text?: unknown; payload?: unknown } | undefined;
+  if (typeof genericReply?.title === 'string' && genericReply.title.trim()) return genericReply.title;
+  if (typeof genericReply?.text === 'string' && genericReply.text.trim()) return genericReply.text;
+  if (typeof genericReply?.payload === 'string' && genericReply.payload.trim()) return genericReply.payload;
+  if (typeof genericReply?.id === 'string' && genericReply.id.trim()) return genericReply.id;
+
+  const body = message.body;
+  if (typeof body === 'string' && body.trim()) return body;
+
   return null;
+};
+
+const synthesizeReplyTextFromInteractive = (message: Record<string, unknown>): string | null => {
+  const interactiveLike =
+    !!message.button ||
+    !!(message as { button_reply?: unknown }).button_reply ||
+    !!(message as { list_reply?: unknown }).list_reply ||
+    !!(
+      message.interactive &&
+      typeof message.interactive === 'object' &&
+      (
+        !!(message.interactive as { button_reply?: unknown }).button_reply ||
+        !!(message.interactive as { list_reply?: unknown }).list_reply
+      )
+    );
+  if (!interactiveLike) return null;
+  const raw = JSON.stringify(message || {}).toLowerCase();
+  if (/(resched|cancel|declin|skip|\bno\b)/.test(raw)) {
+    return 'no';
+  }
+  if (/(confirm|publish|approved|approve|\byes\b|\bok\b)/.test(raw)) {
+    return 'confirm';
+  }
+  // Last-resort for opaque interactive ids from approved templates.
+  return 'confirm';
 };
 
 const extractContextMessageId = (message: Record<string, unknown>): string | null => {
@@ -1241,7 +1285,7 @@ export const processIncomingConfirmationWebhook = async (
 
   for (const message of messages) {
     const from = typeof message.from === 'string' ? message.from : '';
-    const replyText = extractReplyText(message);
+    let replyText = extractReplyText(message);
     const providerMessageId = extractProviderMessageId(message);
     const contextMessageId = extractContextMessageId(message);
     const hasInteractiveReply =
@@ -1276,11 +1320,16 @@ export const processIncomingConfirmationWebhook = async (
       });
     }
 
+    if (!replyText) {
+      replyText = synthesizeReplyTextFromInteractive(message);
+    }
+
     if (!from || !replyText) {
       ignored += 1;
       await updateInbound(inboundEventId, { status: 'ignored' }).catch((error) => {
         logger.warn('Failed to update inbound event status=ignored', {
           providerMessageId,
+          hasInteractiveReply,
           error: error instanceof Error ? error.message : String(error),
         });
       });
