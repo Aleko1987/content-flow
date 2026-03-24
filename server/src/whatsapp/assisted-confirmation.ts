@@ -34,7 +34,6 @@ type PendingConfirmation = {
   scheduled_post_id: string;
   recipient_phone: string;
   prompt_message_id: string | null;
-  confirmation_token: string | null;
   media_queue_json: unknown;
   final_text: string;
   media_url: string;
@@ -199,26 +198,19 @@ const createPromptPreview = (caption: string) => {
   return `${trimmed.slice(0, max - 1).trimEnd()}...`;
 };
 
-const buildAssistedPromptText = (params: {
-  captionPreview: string;
-  publishDate: string;
-  publishTime: string;
-  confirmationToken: string;
-}) => {
+const buildAssistedPromptText = (params: { captionPreview: string; publishDate: string; publishTime: string }) => {
   const fallbackTemplate = [
     'Scheduled WhatsApp status is ready.',
     '{publish_date_line}',
     '{publish_time_line}',
     'Preview: {caption}',
-    'Confirmation token: {confirmation_token}',
-    'Reply YES {confirmation_token} to publish, or NO {confirmation_token} to skip.',
+    'Reply YES to publish, or NO to skip.',
   ].join('\n');
   const rawTemplate = (process.env.WA_ASSISTED_CONFIRMATION_PROMPT_TEXT || fallbackTemplate).trim() || fallbackTemplate;
   const publishDateLine = params.publishDate ? `Date: ${params.publishDate}` : '';
   const publishTimeLine = params.publishTime ? `Time: ${params.publishTime}` : '';
   return rawTemplate
     .replace(/\{caption\}/gi, params.captionPreview)
-    .replace(/\{confirmation_token\}/gi, params.confirmationToken)
     .replace(/\{publish_date\}/gi, params.publishDate || '')
     .replace(/\{publish_time\}/gi, params.publishTime || '')
     .replace(/\{publish_date_line\}/gi, publishDateLine)
@@ -234,10 +226,6 @@ const maskPhoneForLogs = (phone: string) => {
 };
 
 const isSendableMediaLink = (value: string) => /^https?:\/\//i.test(value.trim());
-const makeConfirmationToken = (scheduledPostId: string) => {
-  const compact = scheduledPostId.replace(/-/g, '').slice(0, 8).toUpperCase();
-  return `CF-${compact || 'CONFIRM'}`;
-};
 
 const PUBLISHING_STATUS = 'publishing';
 const PUBLISHED_STATUS = 'published';
@@ -258,12 +246,6 @@ const parseIntentTokens = (raw: string): string[] => {
     .filter(Boolean);
 };
 
-const extractConfirmationToken = (text: string | null | undefined): string | null => {
-  const value = (text || '').trim();
-  if (!value) return null;
-  const match = value.match(/\bCF-[A-Z0-9]{6,12}\b/i);
-  return match ? match[0].toUpperCase() : null;
-};
 
 export const isAffirmativeReply = (text: string) => {
   const value = normalizeIntentText(text);
@@ -459,55 +441,33 @@ const updateInboundEventOutcome = async (
 
 const findPendingConfirmation = async (
   fromPhone: string,
-  contextMessageId: string | null,
-  confirmationToken?: string | null
+  contextMessageId: string | null
 ): Promise<PendingConfirmation | null> => {
   await ensureConfirmationsTable();
 
-  const normalizedToken = (confirmationToken || '').trim().toUpperCase();
   if (contextMessageId) {
-    const byContext = normalizedToken
-      ? await db.execute(sql`
-          SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, confirmation_token, media_queue_json, final_text, media_url, mime_type
-          FROM whatsapp_assisted_confirmations
-          WHERE prompt_message_id = ${contextMessageId}
-            AND confirmation_token = ${normalizedToken}
-            AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
-          ORDER BY created_at DESC
-          LIMIT 1
-        `)
-      : await db.execute(sql`
-          SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, confirmation_token, media_queue_json, final_text, media_url, mime_type
-          FROM whatsapp_assisted_confirmations
-          WHERE prompt_message_id = ${contextMessageId}
-            AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
-          ORDER BY created_at DESC
-          LIMIT 1
-        `);
+    const byContext = await db.execute(sql`
+      SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, media_queue_json, final_text, media_url, mime_type
+      FROM whatsapp_assisted_confirmations
+      WHERE prompt_message_id = ${contextMessageId}
+        AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
     if (Array.isArray((byContext as any).rows) && (byContext as any).rows.length > 0) {
       return (byContext as any).rows[0] as PendingConfirmation;
     }
   }
 
   const normalizedPhone = normalizePhone(fromPhone);
-  const byPhone = normalizedToken
-    ? await db.execute(sql`
-        SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, confirmation_token, media_queue_json, final_text, media_url, mime_type
-        FROM whatsapp_assisted_confirmations
-        WHERE recipient_phone = ${normalizedPhone}
-          AND confirmation_token = ${normalizedToken}
-          AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
-        ORDER BY created_at DESC
-        LIMIT 1
-      `)
-    : await db.execute(sql`
-        SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, confirmation_token, media_queue_json, final_text, media_url, mime_type
-        FROM whatsapp_assisted_confirmations
-        WHERE recipient_phone = ${normalizedPhone}
-          AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
-        ORDER BY created_at DESC
-        LIMIT 1
-      `);
+  const byPhone = await db.execute(sql`
+    SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, media_queue_json, final_text, media_url, mime_type
+    FROM whatsapp_assisted_confirmations
+    WHERE recipient_phone = ${normalizedPhone}
+      AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
+    ORDER BY created_at DESC
+    LIMIT 1
+  `);
   if (Array.isArray((byPhone as any).rows) && (byPhone as any).rows.length > 0) {
     return (byPhone as any).rows[0] as PendingConfirmation;
   }
@@ -613,7 +573,6 @@ type AssistedConfirmationDeps = {
     scheduledPostId: string;
     recipientPhone: string;
     promptMessageId?: string | null;
-    confirmationToken: string;
     mediaQueue: MediaQueueItem[];
     caption: string;
     mediaUrl: string;
@@ -747,7 +706,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
       scheduledPostId: string;
       recipientPhone: string;
       promptMessageId?: string | null;
-      confirmationToken: string;
       mediaQueue: MediaQueueItem[];
       caption: string;
       mediaUrl: string;
@@ -761,7 +719,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
           scheduled_post_id,
           recipient_phone,
           prompt_message_id,
-          confirmation_token,
           media_queue_json,
           final_text,
           media_url,
@@ -776,7 +733,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
           ${input.scheduledPostId},
           ${input.recipientPhone},
           ${input.promptMessageId ?? null},
-          ${input.confirmationToken},
           ${mediaQueueJson}::jsonb,
           ${input.caption},
           ${input.mediaUrl},
@@ -789,7 +745,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
         ON CONFLICT (outbound_operation_key) DO UPDATE
         SET recipient_phone = EXCLUDED.recipient_phone,
             prompt_message_id = EXCLUDED.prompt_message_id,
-            confirmation_token = EXCLUDED.confirmation_token,
             media_queue_json = EXCLUDED.media_queue_json,
             final_text = EXCLUDED.final_text,
             media_url = EXCLUDED.media_url,
@@ -802,7 +757,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   const sendPrompt = deps.sendPrompt || sendViaEarthcureWhatsAppWithRetry;
 
   const previewText = createPromptPreview(params.caption);
-  const confirmationToken = makeConfirmationToken(params.scheduledPostId);
   const mediaQueue = await buildMediaSnapshotForScheduledPost({
     scheduledPostId: params.scheduledPostId,
     fallbackMediaUrl: params.mediaUrl,
@@ -818,7 +772,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
     captionPreview: parseBodyParamsTemplate(previewText, scheduledDate, scheduledTime)[0] || previewText,
     publishDate: scheduledDate,
     publishTime: scheduledTime,
-    confirmationToken,
   });
 
   const existing = await loadOutboundByOperationKey(operationKey);
@@ -836,7 +789,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
         scheduledPostId: params.scheduledPostId,
         recipientPhone,
         promptMessageId: existing.providerMessageId,
-        confirmationToken,
         mediaQueue,
         caption: params.caption,
         mediaUrl: params.mediaUrl,
@@ -891,7 +843,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
       scheduledPostId: params.scheduledPostId,
       recipientPhone,
       promptMessageId: prompt.providerMessageId,
-      confirmationToken,
       mediaQueue,
       caption: params.caption,
       mediaUrl: params.mediaUrl,
@@ -913,7 +864,6 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
       scheduledPostId: params.scheduledPostId,
       recipientPhone,
       promptMessageId: null,
-      confirmationToken,
       mediaQueue,
       caption: params.caption,
       mediaUrl: params.mediaUrl,
@@ -1285,7 +1235,6 @@ export const processIncomingConfirmationWebhook = async (
   for (const message of messages) {
     const from = typeof message.from === 'string' ? message.from : '';
     const replyText = extractReplyText(message);
-    const replyToken = extractConfirmationToken(replyText);
     const providerMessageId = extractProviderMessageId(message);
     const contextMessageId = extractContextMessageId(message);
 
@@ -1321,7 +1270,7 @@ export const processIncomingConfirmationWebhook = async (
       continue;
     }
 
-    const pending = await findPending(from, contextMessageId, replyToken);
+    const pending = await findPending(from, contextMessageId);
     if (!pending) {
       unmatched += 1;
       await updateInbound(inboundEventId, { status: 'unmatched' }).catch((error) => {
