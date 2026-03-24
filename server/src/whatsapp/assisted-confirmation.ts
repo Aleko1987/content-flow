@@ -290,11 +290,10 @@ const extractReplyText = (message: Record<string, unknown>): string | null => {
   const textBody = (message.text as { body?: unknown } | undefined)?.body;
   if (typeof textBody === 'string' && textBody.trim()) return textBody;
 
-  const buttonPayload = (message.button as { payload?: unknown } | undefined)?.payload;
-  if (typeof buttonPayload === 'string' && buttonPayload.trim()) return buttonPayload;
-
   const buttonText = (message.button as { text?: unknown } | undefined)?.text;
   if (typeof buttonText === 'string' && buttonText.trim()) return buttonText;
+  const buttonPayload = (message.button as { payload?: unknown } | undefined)?.payload;
+  if (typeof buttonPayload === 'string' && buttonPayload.trim()) return buttonPayload;
 
   const interactive = message.interactive as
     | {
@@ -302,14 +301,14 @@ const extractReplyText = (message: Record<string, unknown>): string | null => {
         list_reply?: { id?: unknown; title?: unknown };
       }
     | undefined;
-  const replyId = interactive?.button_reply?.id;
-  if (typeof replyId === 'string' && replyId.trim()) return replyId;
   const replyTitle = interactive?.button_reply?.title;
   if (typeof replyTitle === 'string' && replyTitle.trim()) return replyTitle;
-  const listReplyId = interactive?.list_reply?.id;
-  if (typeof listReplyId === 'string' && listReplyId.trim()) return listReplyId;
+  const replyId = interactive?.button_reply?.id;
+  if (typeof replyId === 'string' && replyId.trim()) return replyId;
   const listReplyTitle = interactive?.list_reply?.title;
   if (typeof listReplyTitle === 'string' && listReplyTitle.trim()) return listReplyTitle;
+  const listReplyId = interactive?.list_reply?.id;
+  if (typeof listReplyId === 'string' && listReplyId.trim()) return listReplyId;
 
   return null;
 };

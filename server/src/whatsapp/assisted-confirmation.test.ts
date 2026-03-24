@@ -279,6 +279,57 @@ test('interactive list_reply confirmation text is normalized and triggers publis
   assert.equal(confirmActions, 1);
 });
 
+test('interactive button reply with numeric id uses title intent', async () => {
+  const { processIncomingConfirmationWebhook } = await modulePromise;
+
+  let confirmActions = 0;
+  const payload = {
+    entry: [
+      {
+        changes: [
+          {
+            value: {
+              messages: [
+                {
+                  id: 'wamid.button.1',
+                  from: '15550004444',
+                  interactive: {
+                    button_reply: { id: '0', title: 'Confirm' },
+                  },
+                  context: { id: 'prompt-button-1' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+    ],
+  };
+
+  const result = await processIncomingConfirmationWebhook(payload as any, {
+    findPending: async () =>
+      ({
+        id: 'confirmation-button-1',
+        scheduled_post_id: 'scheduled-button-1',
+        recipient_phone: '15550004444',
+        prompt_message_id: 'prompt-button-1',
+        media_queue_json: [],
+        final_text: 'Caption',
+        media_url: 'https://example.com/image.jpg',
+        mime_type: 'image/jpeg',
+      }) as any,
+    recordInbound: async () => ({ eventId: 'evt-button-1', duplicate: false }),
+    updateInbound: async () => {},
+    onAffirmative: async () => {
+      confirmActions += 1;
+    },
+    onAffirmativeFailure: async () => {},
+  });
+
+  assert.equal(result.confirmed, 1);
+  assert.equal(confirmActions, 1);
+});
+
 test('affirmative execution failure calls retryable failure handler once', async () => {
   const { processIncomingConfirmationWebhook } = await modulePromise;
 
