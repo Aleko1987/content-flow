@@ -71,6 +71,33 @@ const generateId = (): string => {
 
 const normalizePhone = (value: string) => value.replace(/[^\d]/g, '');
 
+export const buildPhoneMatchCandidates = (fromPhone: string) => {
+  const normalized = normalizePhone(fromPhone);
+  const candidates = new Set<string>();
+  if (!normalized) return candidates;
+  candidates.add(normalized);
+
+  // Common local/international transforms used by WhatsApp senders.
+  if (normalized.startsWith('0') && normalized.length >= 10) {
+    candidates.add(normalized.slice(1));
+    candidates.add(`27${normalized.slice(1)}`);
+  }
+  if (normalized.startsWith('27') && normalized.length >= 11) {
+    candidates.add(`0${normalized.slice(2)}`);
+    candidates.add(normalized.slice(2));
+  }
+  if (normalized.startsWith('1') && normalized.length === 11) {
+    candidates.add(normalized.slice(1));
+  }
+  if (normalized.length > 10) {
+    candidates.add(normalized.slice(-10));
+  }
+  if (normalized.length > 9) {
+    candidates.add(normalized.slice(-9));
+  }
+  return new Set([...candidates].filter((value) => value.length >= 7));
+};
+
 const resolveRecipientPhone = (override?: string | null) => {
   const raw = (override || process.env.WA_DEFAULT_RECIPIENT_PHONE || process.env.WA_RECIPIENT_PHONE || '').trim();
   const normalized = normalizePhone(raw);
@@ -663,6 +690,26 @@ const findPendingConfirmation = async (
   `);
   if (Array.isArray((byPhone as any).rows) && (byPhone as any).rows.length > 0) {
     return (byPhone as any).rows[0] as PendingConfirmation;
+  }
+
+  // Fallback for local-vs-international numbering mismatches (e.g. 078... vs 2778...).
+  const variants = [...buildPhoneMatchCandidates(fromPhone)].filter((value) => value !== normalizedPhone);
+  for (const variant of variants) {
+    const byVariant = await db.execute(sql`
+      SELECT id, scheduled_post_id, recipient_phone, prompt_message_id, media_queue_json, final_text, media_url, mime_type
+      FROM whatsapp_assisted_confirmations
+      WHERE recipient_phone = ${variant}
+        AND status IN (${AWAITING_CONFIRMATION_STATUS}, ${LEGACY_PENDING_STATUS}, ${RETRYABLE_FAILED_STATUS})
+      ORDER BY created_at DESC
+      LIMIT 1
+    `);
+    if (Array.isArray((byVariant as any).rows) && (byVariant as any).rows.length > 0) {
+      logger.info('Matched pending confirmation by phone variant', {
+        fromPhoneNormalized: normalizedPhone || null,
+        variant,
+      });
+      return (byVariant as any).rows[0] as PendingConfirmation;
+    }
   }
 
   // Fallback: if exactly one recent pending confirmation exists, allow it.

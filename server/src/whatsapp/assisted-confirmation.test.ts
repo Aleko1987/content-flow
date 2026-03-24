@@ -110,6 +110,18 @@ test('context-only interactive confirm without from still processes publish', as
   assert.equal(confirmActions, 1);
 });
 
+test('phone match candidates include local and international variants', async () => {
+  const { buildPhoneMatchCandidates } = await modulePromise;
+
+  const fromIntl = [...buildPhoneMatchCandidates('27785450300')];
+  assert.equal(fromIntl.includes('27785450300'), true);
+  assert.equal(fromIntl.includes('0785450300'), true);
+
+  const fromLocal = [...buildPhoneMatchCandidates('0785450300')];
+  assert.equal(fromLocal.includes('0785450300'), true);
+  assert.equal(fromLocal.includes('27785450300'), true);
+});
+
 test('invalid or missing token is rejected', async () => {
   const { validateForwardToken } = await modulePromise;
 
