@@ -3,6 +3,7 @@ import { sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
 import { contentItems, scheduledPostMedia, scheduledPosts } from '../db/schema.js';
 import { logger } from '../utils/logger.js';
+import { recordPostedVideo } from '../posting-history/service.js';
 import { sendWhatsAppText } from './cloud-api.js';
 import { EarthcureWhatsAppError, sendViaEarthcureWhatsAppWithRetry } from './earthcure-bridge.js';
 
@@ -1449,6 +1450,18 @@ const handleAffirmativeReply = async (
       .from(scheduledPosts)
       .where(eq(scheduledPosts.id, pending.scheduled_post_id))
       .limit(1);
+    // Media queue snapshots preserve the original filename from scheduling time.
+    const publishedVideo = mediaQueue.find((item) => item.mediaType === 'video' && item.fileName) || null;
+    if (publishedVideo?.fileName) {
+      await recordPostedVideo({
+        contentItemId: post?.contentItemId ?? null,
+        filename: publishedVideo.fileName,
+        platform: 'whatsapp_status',
+        postedAt: now,
+        status: 'success',
+        externalPostId: providerMessageIds.join(','),
+      });
+    }
     if (post?.contentItemId) {
       await db
         .update(contentItems)

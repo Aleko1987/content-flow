@@ -7,6 +7,7 @@ import { logger } from '../utils/logger.js';
 import type { ProviderResult } from '../publish/providers/types.js';
 import { sendWhatsAppAssistedStatus } from '../whatsapp/status-service.js';
 import { startAssistedConfirmationForScheduledPost } from '../whatsapp/assisted-confirmation.js';
+import { recordPostedVideo } from '../posting-history/service.js';
 
 const ENABLED = process.env.SCHEDULED_POSTS_ENABLED !== 'false';
 const INTERVAL_MS = Number(process.env.SCHEDULED_POSTS_INTERVAL_MS ?? 60_000);
@@ -234,12 +235,30 @@ export const executePost = async (post: ScheduledPostRecord) => {
   }
 
   if (postedToAny) {
+    const publishedAt = new Date();
     await markStatus(post.id, queuedForConfirmation ? 'queued' : 'published');
     if (!queuedForConfirmation && post.contentItemId) {
       await db
         .update(contentItems)
         .set({ status: 'posted', updatedAt: new Date() })
         .where(eq(contentItems.id, post.contentItemId));
+    }
+    if (!queuedForConfirmation) {
+      const media = await getMedia();
+      // scheduled_post_media.fileName is the most reliable original filename in this flow.
+      const video = media.find((m) => String(m.type) === 'video') || null;
+      if (video?.fileName) {
+        for (const result of results) {
+          await recordPostedVideo({
+            contentItemId: post.contentItemId ?? null,
+            filename: video.fileName,
+            platform: result.providerKey,
+            postedAt: publishedAt,
+            status: 'success',
+            externalPostId: result.providerRef,
+          });
+        }
+      }
     }
   } else {
     await markStatus(post.id, 'failed');

@@ -121,6 +121,30 @@ export interface ApiPublishLog {
   notes: string | null;
 }
 
+export interface ApiPostedVideo {
+  id: string;
+  content_item_id: string | null;
+  publish_task_id: string | null;
+  filename: string;
+  hook_number: number | null;
+  meat_number: number | null;
+  cta_number: number | null;
+  variant: string | null;
+  platform: string;
+  posted_at: string;
+  status: string;
+  external_post_id: string | null;
+  created_at: string;
+}
+
+export interface ApiPostedVideosSummary {
+  totalPostedLast30Days: number;
+  hookUsageLast30Days: Array<{ hookNumber: number; count: number }>;
+  meatUsageLast30Days: Array<{ meatNumber: number; count: number }>;
+  ctaUsageLast30Days: Array<{ ctaNumber: number; count: number }>;
+  recentCombos: Array<{ filename: string; platform: string; postedAt: string }>;
+}
+
 export interface ApiBulkCreateResponse {
   tasks: ApiPublishTask[];
 }
@@ -376,6 +400,25 @@ export const apiClient = {
       fetch(`${API_FULL_URL}/publish-logs/${id}`, {
         method: 'DELETE',
       }).then(() => undefined),
+  },
+
+  postedVideos: {
+    getAll: (params?: Record<string, string>): Promise<ApiPostedVideo[]> => {
+      const searchParams = new URLSearchParams();
+      if (params) {
+        Object.entries(params).forEach(([key, value]) => {
+          if (value) searchParams.append(key, value);
+        });
+      }
+      const query = searchParams.toString();
+      return fetch(`${API_FULL_URL}/posted-videos${query ? `?${query}` : ''}`).then(r =>
+        handleResponse<ApiPostedVideo[]>(r)
+      );
+    },
+    getSummary: (): Promise<ApiPostedVideosSummary> =>
+      fetch(`${API_FULL_URL}/posted-videos/summary`).then(r =>
+        handleResponse<ApiPostedVideosSummary>(r)
+      ),
   },
 
   // Media Assets

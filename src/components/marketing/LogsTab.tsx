@@ -1,7 +1,8 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useContentOps } from '@/contexts/ContentOpsContext';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { apiClient, type ApiPostedVideo, type ApiPostedVideosSummary } from '@/lib/api-client';
 import {
   Table,
   TableBody,
@@ -36,6 +37,8 @@ export const LogsTab: React.FC = () => {
   const [channelFilter, setChannelFilter] = useState<string>('all');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [postedVideos, setPostedVideos] = useState<ApiPostedVideo[]>([]);
+  const [postedSummary, setPostedSummary] = useState<ApiPostedVideosSummary | null>(null);
   
   const logs = getLogs();
   
@@ -48,6 +51,29 @@ export const LogsTab: React.FC = () => {
       return matchesChannel && matchesStart && matchesEnd;
     }).sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime());
   }, [logs, channelFilter, startDate, endDate]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const loadPostedVideos = async () => {
+      try {
+        const [rows, summary] = await Promise.all([
+          apiClient.postedVideos.getAll({ limit: '20' }),
+          apiClient.postedVideos.getSummary(),
+        ]);
+        if (!isMounted) return;
+        setPostedVideos(rows);
+        setPostedSummary(summary);
+      } catch (error) {
+        // Keep the tab usable even if posting history is unavailable.
+        console.error('Failed to load posted videos history:', error);
+      }
+    };
+
+    loadPostedVideos();
+    return () => {
+      isMounted = false;
+    };
+  }, []);
   
   const exportToCsv = () => {
     const headers = ['Title', 'Channel', 'Posted At', 'Post URL', 'Reach', 'Clicks', 'Notes'];
@@ -215,6 +241,75 @@ export const LogsTab: React.FC = () => {
             })()}
           </p>
         </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <p className="text-sm text-muted-foreground">Videos Posted (30d)</p>
+          <p className="text-2xl font-bold text-foreground">{postedSummary?.totalPostedLast30Days ?? 0}</p>
+        </div>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <p className="text-sm text-muted-foreground">Top Hook (30d)</p>
+          <p className="text-2xl font-bold text-foreground">
+            {postedSummary?.hookUsageLast30Days[0]
+              ? `hk${postedSummary.hookUsageLast30Days[0].hookNumber} (${postedSummary.hookUsageLast30Days[0].count})`
+              : '-'}
+          </p>
+        </div>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <p className="text-sm text-muted-foreground">Top Meat (30d)</p>
+          <p className="text-2xl font-bold text-foreground">
+            {postedSummary?.meatUsageLast30Days[0]
+              ? `m${postedSummary.meatUsageLast30Days[0].meatNumber} (${postedSummary.meatUsageLast30Days[0].count})`
+              : '-'}
+          </p>
+        </div>
+        <div className="p-4 bg-card border border-border rounded-lg">
+          <p className="text-sm text-muted-foreground">Top CTA (30d)</p>
+          <p className="text-2xl font-bold text-foreground">
+            {postedSummary?.ctaUsageLast30Days[0]
+              ? `cta${postedSummary.ctaUsageLast30Days[0].ctaNumber} (${postedSummary.ctaUsageLast30Days[0].count})`
+              : '-'}
+          </p>
+        </div>
+      </div>
+
+      <div className="border border-border rounded-lg overflow-hidden bg-card">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-secondary/30 hover:bg-secondary/30">
+              <TableHead>Filename</TableHead>
+              <TableHead className="w-28">Platform</TableHead>
+              <TableHead className="w-28">Hook</TableHead>
+              <TableHead className="w-24">Meat</TableHead>
+              <TableHead className="w-24">CTA</TableHead>
+              <TableHead className="w-24">Variant</TableHead>
+              <TableHead className="w-44">Posted At</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {postedVideos.map((video) => (
+              <TableRow key={video.id} className="hover:bg-secondary/20">
+                <TableCell className="font-mono text-xs">{video.filename}</TableCell>
+                <TableCell>{video.platform}</TableCell>
+                <TableCell>{video.hook_number ?? '-'}</TableCell>
+                <TableCell>{video.meat_number ?? '-'}</TableCell>
+                <TableCell>{video.cta_number ?? '-'}</TableCell>
+                <TableCell>{video.variant ?? '-'}</TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {new Date(video.posted_at).toLocaleString()}
+                </TableCell>
+              </TableRow>
+            ))}
+            {postedVideos.length === 0 && (
+              <TableRow>
+                <TableCell colSpan={7} className="text-center py-8 text-muted-foreground">
+                  No posted video history found
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
       </div>
     </div>
   );

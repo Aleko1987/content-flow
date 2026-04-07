@@ -109,6 +109,30 @@ export const publishLogs = pgTable('publish_logs', {
   notes: text('notes'),
 });
 
+// Posted videos history table
+export const postedVideos = pgTable('posted_videos', {
+  id: text('id').primaryKey(),
+  contentItemId: text('content_item_id').references(() => contentItems.id, { onDelete: 'set null' }),
+  publishTaskId: text('publish_task_id').references(() => publishTasks.id, { onDelete: 'set null' }),
+  filename: text('filename').notNull(),
+  hookNumber: integer('hook_number'),
+  meatNumber: integer('meat_number'),
+  ctaNumber: integer('cta_number'),
+  variant: text('variant'),
+  platform: text('platform').notNull(),
+  postedAt: timestamp('posted_at').notNull(),
+  status: text('status').notNull(),
+  externalPostId: text('external_post_id'),
+  createdAt: timestamp('created_at').notNull().defaultNow(),
+}, (table) => ({
+  postedAtIdx: index('idx_posted_videos_posted_at').on(table.postedAt),
+  platformIdx: index('idx_posted_videos_platform').on(table.platform),
+  hookIdx: index('idx_posted_videos_hook_number').on(table.hookNumber),
+  meatIdx: index('idx_posted_videos_meat_number').on(table.meatNumber),
+  ctaIdx: index('idx_posted_videos_cta_number').on(table.ctaNumber),
+  filenameIdx: index('idx_posted_videos_filename').on(table.filename),
+}));
+
 // Intent events table
 export const intentEvents = pgTable('intent_events', {
   id: text('id').primaryKey(),

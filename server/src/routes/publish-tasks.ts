@@ -8,6 +8,7 @@ import { sha256 } from '../utils/crypto.js';
 import { getConnectedAccount } from '../db/connectedAccounts.js';
 import { getProvider } from '../publish/providers/registry.js';
 import { sendWhatsAppStatusForPublishTask } from '../whatsapp/status-service.js';
+import { recordPostedVideo } from '../posting-history/service.js';
 
 const router = Router();
 
@@ -589,6 +590,7 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
     // Execute provider call
     const provider = getProvider(providerKey);
     let providerResult: { providerRef: string; canonicalUrl?: string };
+    let postedFilename: string | null = null;
     try {
       if (providerKey === 'instagram') {
         if (!provider.postImage) {
@@ -627,6 +629,8 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
         const asset = await resolveMediaUrl();
         const mediaUrl = asset?.publicUrl || null;
         const mimeType = asset?.mimeType || '';
+        // media_assets currently persists objectKey (not original upload name), so use it as the canonical asset name.
+        postedFilename = asset?.objectKey || null;
 
         if (!mediaUrl) {
           throw new Error('Instagram publishing requires a media asset with a public URL');
@@ -684,6 +688,18 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
         updatedAt: new Date(),
       })
       .where(eq(publishTasks.id, id));
+
+    if (postedFilename) {
+      await recordPostedVideo({
+        contentItemId: task.contentItemId,
+        publishTaskId: task.id,
+        filename: postedFilename,
+        platform: providerKey,
+        postedAt: new Date(),
+        status: 'success',
+        externalPostId: providerResult.providerRef,
+      });
+    }
 
     // Write publish_log for task.succeeded
     await db.insert(publishLogs).values({

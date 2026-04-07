@@ -15,6 +15,7 @@ import seedRouter from './routes/seed.js';
 import scheduledPostsRouter from './routes/scheduled-posts.js';
 import integrationsRouter from './routes/integrations.js';
 import whatsappRouter from './routes/whatsapp.js';
+import postedVideosRouter from './routes/posted-videos.js';
 import { startScheduledPostRunner } from './scheduled-posts/runner.js';
 
 // Load environment variables
@@ -218,6 +219,7 @@ app.use('/api/content-ops/publish-tasks', publishTasksRouter);
 app.use('/api/content-ops/publish-logs', publishLogsRouter);
 app.use('/api/content-ops/media-assets', mediaAssetsRouter);
 app.use('/api/content-ops/media', mediaRouter);
+app.use('/api/content-ops/posted-videos', postedVideosRouter);
 app.use('/api/content-ops', seedRouter);
 
 // Scheduled Posts API (Calendar feature)
