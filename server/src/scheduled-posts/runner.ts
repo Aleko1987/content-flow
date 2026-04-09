@@ -111,6 +111,17 @@ export const executePost = async (post: ScheduledPostRecord) => {
       .where(eq(scheduledPostMedia.scheduledPostId, post.id));
     return cachedMedia;
   };
+  const media = await getMedia();
+  const video = media.find((m) => String(m.type) === 'video') || null;
+  const image = media.find((m) => String(m.type) === 'image') || null;
+  const publicImageUrl = image?.storageUrl && !image.storageUrl.startsWith('blob:') ? image.storageUrl : null;
+
+  // Product rule: any video post must include an uploaded public image for a reliable cover/thumbnail flow.
+  if (video && !publicImageUrl) {
+    throw new Error(
+      'Video posts require a companion uploaded image with a public URL. Add an image and wait for upload to finish before publishing.'
+    );
+  }
 
   if (platforms.includes('x')) {
     const account = await getConnectedAccount('x');
@@ -135,9 +146,6 @@ export const executePost = async (post: ScheduledPostRecord) => {
       let result: string | ProviderResult;
 
       // Prefer attached video for FB video posts, then attached image, then text-only fallback.
-      const media = await getMedia();
-      const video = media.find((m) => String(m.type) === 'video') || null;
-      const image = media.find((m) => String(m.type) === 'image') || null;
       const videoUrl = video?.storageUrl || null;
       const imageUrl = image?.storageUrl || null;
       if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
@@ -170,16 +178,13 @@ export const executePost = async (post: ScheduledPostRecord) => {
       throw new Error('Instagram provider does not support media publishing');
     }
 
-    const media = await getMedia();
-    const video = media.find((m) => String(m.type) === 'video') || null;
-    const image = media.find((m) => String(m.type) === 'image') || null;
     const videoUrl = video?.storageUrl || null;
     const imageUrl = image?.storageUrl || null;
 
     try {
       let result: string | ProviderResult;
       if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
-        result = await provider.postVideo({ caption: text, videoUrl }, account.tokenData);
+        result = await provider.postVideo({ caption: text, videoUrl, coverImageUrl: publicImageUrl || undefined }, account.tokenData);
       } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
         result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
       } else {
@@ -197,8 +202,7 @@ export const executePost = async (post: ScheduledPostRecord) => {
   }
 
   if (platforms.includes('whatsapp_status')) {
-    const media = await getMedia();
-    const best = media.find((m) => String(m.type) === 'image') || media.find((m) => String(m.type) === 'video') || null;
+    const best = media.find((m) => String(m.type) === 'video') || media.find((m) => String(m.type) === 'image') || null;
     const mediaUrl = best?.storageUrl || null;
     if (!mediaUrl || mediaUrl.startsWith('blob:')) {
       throw new Error(

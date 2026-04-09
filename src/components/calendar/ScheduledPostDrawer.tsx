@@ -53,13 +53,15 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
 
   const instagramSelected = platforms.includes('instagram');
   const whatsappSelected = platforms.includes('whatsapp_status');
-  const hasUploadedInstagramImage = media.some(
+  const hasVideoMedia = media.some((m) => m.type === 'video');
+  const hasUploadedPublicImage = media.some(
     (m) => m.type === 'image' && typeof m.storageUrl === 'string' && m.storageUrl.startsWith('http')
   );
-  const hasLocalButNotUploadedImage = media.some(
+  const hasPendingImageUpload = media.some(
     (m) => m.type === 'image' && !!m.localObjectUrl && (!m.storageUrl || !m.storageUrl.startsWith('http'))
   );
-  const blockInstagramPostNow = instagramSelected && (!hasUploadedInstagramImage || hasLocalButNotUploadedImage);
+  const requiresVideoCompanionImage = hasVideoMedia;
+  const blockVideoPost = requiresVideoCompanionImage && (!hasUploadedPublicImage || hasPendingImageUpload);
 
   const formatLocalDate = (value: Date) => {
     const year = value.getFullYear();
@@ -93,6 +95,14 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const handleSave = async () => {
     if (!date || !time) {
       toast({ title: 'Error', description: 'Date and time are required', variant: 'destructive' });
+      return;
+    }
+    if (blockVideoPost) {
+      toast({
+        title: 'Image required for video post',
+        description: 'Video posts require one uploaded image with a public URL. Add an image and wait for upload to finish.',
+        variant: 'destructive',
+      });
       return;
     }
 
@@ -132,10 +142,10 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     if (!post) return;
     setPostingNow(true);
     try {
-      if (blockInstagramPostNow) {
+      if (blockVideoPost) {
         toast({
-          title: 'Upload still in progress',
-          description: 'Instagram needs a public image URL. Wait for the upload to finish, then try Post Now again.',
+          title: 'Image required for video post',
+          description: 'Video posts require one uploaded image with a public URL. Add an image and wait for upload to finish.',
           variant: 'destructive',
         });
         return;
@@ -302,7 +312,12 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
           <div>
             <Label>Media</Label>
             <MediaDropzone value={media} onChange={setMedia} normalizeForInstagram={instagramSelected} />
-            {instagramSelected && !hasUploadedInstagramImage && (
+            {requiresVideoCompanionImage && blockVideoPost && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                This video post needs a companion image with a public URL (used for cover/thumbnail reliability). Add an image and wait for upload to finish.
+              </p>
+            )}
+            {instagramSelected && !hasUploadedPublicImage && (
               <p className="mt-2 text-xs text-muted-foreground">
                 Instagram requires an uploaded image with a public URL. Add an image and wait for upload to finish before posting.
               </p>
@@ -313,11 +328,11 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
         <SheetFooter className="flex gap-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
           {post && (
-            <Button variant="secondary" onClick={handlePostNow} disabled={saving || postingNow || blockInstagramPostNow}>
+            <Button variant="secondary" onClick={handlePostNow} disabled={saving || postingNow || blockVideoPost}>
               {postingNow ? 'Posting...' : 'Post Now'}
             </Button>
           )}
-          <Button onClick={handleSave} disabled={saving || postingNow}>
+          <Button onClick={handleSave} disabled={saving || postingNow || blockVideoPost}>
             {saving ? 'Saving...' : 'Save'}
           </Button>
         </SheetFooter>

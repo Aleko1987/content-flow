@@ -14,6 +14,7 @@ export interface ImagePostParams {
 export interface VideoPostParams {
   caption: string;
   videoUrl: string;
+  coverImageUrl?: string;
 }
 
 /**

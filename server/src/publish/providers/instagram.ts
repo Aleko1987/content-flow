@@ -79,6 +79,7 @@ export class InstagramProvider implements PublishProvider {
         video_url: params.videoUrl,
         caption: params.caption,
         media_type: 'REELS',
+        ...(params.coverImageUrl ? { cover_url: params.coverImageUrl } : {}),
       }),
     });
 
