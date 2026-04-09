@@ -11,6 +11,11 @@ export interface ImagePostParams {
   imageUrl: string;
 }
 
+export interface VideoPostParams {
+  caption: string;
+  videoUrl: string;
+}
+
 /**
  * Provider adapter interface for publishing content
  */
@@ -30,6 +35,14 @@ export interface PublishProvider {
    * @returns Provider reference or object with providerRef and optional canonicalUrl
    */
   postImage?: (params: ImagePostParams, tokenData: { access_token: string; [key: string]: unknown }) => Promise<string | ProviderResult>;
+
+  /**
+   * Publish a video with caption
+   * @param params - Video post parameters
+   * @param tokenData - Decrypted OAuth token data
+   * @returns Provider reference or object with providerRef and optional canonicalUrl
+   */
+  postVideo?: (params: VideoPostParams, tokenData: { access_token: string; [key: string]: unknown }) => Promise<string | ProviderResult>;
 }
 
 export type ProviderKey = 'x' | 'instagram' | 'facebook';

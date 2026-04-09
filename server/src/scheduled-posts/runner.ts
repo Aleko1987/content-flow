@@ -134,11 +134,15 @@ export const executePost = async (post: ScheduledPostRecord) => {
     try {
       let result: string | ProviderResult;
 
-      // If an uploaded image is attached, publish as a photo post so the image displays.
+      // Prefer attached video for FB video posts, then attached image, then text-only fallback.
       const media = await getMedia();
+      const video = media.find((m) => String(m.type) === 'video') || null;
       const image = media.find((m) => String(m.type) === 'image') || null;
+      const videoUrl = video?.storageUrl || null;
       const imageUrl = image?.storageUrl || null;
-      if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
+      if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
+        result = await provider.postVideo({ caption: text, videoUrl }, account.tokenData);
+      } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
         result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
       } else {
         result = await provider.postText(text, account.tokenData);
@@ -162,22 +166,27 @@ export const executePost = async (post: ScheduledPostRecord) => {
       throw new Error('No connected Instagram account found');
     }
     const provider = getProvider('instagram');
-    if (!provider.postImage) {
-      throw new Error('Instagram provider does not support image publishing');
+    if (!provider.postImage && !provider.postVideo) {
+      throw new Error('Instagram provider does not support media publishing');
     }
 
     const media = await getMedia();
+    const video = media.find((m) => String(m.type) === 'video') || null;
     const image = media.find((m) => String(m.type) === 'image') || null;
+    const videoUrl = video?.storageUrl || null;
     const imageUrl = image?.storageUrl || null;
 
-    if (!imageUrl || imageUrl.startsWith('blob:')) {
-      throw new Error(
-        'Instagram publishing requires an uploaded image with a public URL. Add an image in the post and wait for upload to finish.'
-      );
-    }
-
     try {
-      const result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+      let result: string | ProviderResult;
+      if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
+        result = await provider.postVideo({ caption: text, videoUrl }, account.tokenData);
+      } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
+        result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+      } else {
+        throw new Error(
+          'Instagram publishing requires an uploaded image or video with a public URL. Add media in the post and wait for upload to finish.'
+        );
+      }
       const normalized: ProviderResult =
         typeof result === 'string' ? { providerRef: result } : result;
       results.push({ providerKey: 'instagram', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });

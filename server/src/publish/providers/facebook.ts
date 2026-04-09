@@ -1,4 +1,4 @@
-import type { ImagePostParams, PublishProvider, ProviderResult } from './types.js';
+import type { ImagePostParams, PublishProvider, ProviderResult, VideoPostParams } from './types.js';
 
 interface FacebookFeedResponse {
   id?: string;
@@ -12,6 +12,11 @@ interface FacebookPostDetailsResponse {
 interface FacebookPhotoResponse {
   id?: string; // photo id
   post_id?: string; // pageId_postId (when published to feed)
+}
+
+interface FacebookVideoResponse {
+  id?: string; // video id
+  post_id?: string; // pageId_postId (if returned)
 }
 
 export class FacebookProvider implements PublishProvider {
@@ -182,6 +187,54 @@ export class FacebookProvider implements PublishProvider {
     const canonicalUrl = details?.permalinkUrl || stablePermalink || legacyFallbackUrl;
 
     return { providerRef: feedData.id, canonicalUrl };
+  }
+
+  async postVideo(
+    params: VideoPostParams,
+    tokenData: { access_token: string; [key: string]: unknown }
+  ): Promise<string | ProviderResult> {
+    const accessToken = tokenData.access_token;
+    const pageId = String(tokenData.page_id || '');
+
+    if (!accessToken) {
+      throw new Error('Missing access_token in token data');
+    }
+    if (!pageId) {
+      throw new Error('Missing page_id in token data');
+    }
+    if (!params.videoUrl) {
+      throw new Error('Missing videoUrl for Facebook video post');
+    }
+
+    const response = await fetch(`${this.apiBaseUrl}/${pageId}/videos`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({
+        file_url: params.videoUrl,
+        description: params.caption || '',
+        published: 'true',
+        access_token: accessToken,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      throw new Error(`Facebook video post failed: ${response.status} ${errorText}`);
+    }
+
+    const data = (await response.json()) as FacebookVideoResponse;
+    if (!data.id) {
+      throw new Error('Invalid Facebook video response: missing id');
+    }
+
+    const preferredRef = data.post_id || data.id;
+    const details = await this.tryFetchPermalink(preferredRef, accessToken);
+    const canonicalUrl = details?.permalinkUrl;
+
+    return {
+      providerRef: preferredRef,
+      canonicalUrl,
+    };
   }
 }
 

@@ -593,8 +593,8 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
     let postedFilename: string | null = null;
     try {
       if (providerKey === 'instagram') {
-        if (!provider.postImage) {
-          throw new Error('Instagram provider does not support image publishing');
+        if (!provider.postImage && !provider.postVideo) {
+          throw new Error('Instagram provider does not support media publishing');
         }
 
         const resolveMediaUrl = async () => {
@@ -635,14 +635,24 @@ router.post('/:id/execute', asyncHandler(async (req: Request, res: Response) => 
         if (!mediaUrl) {
           throw new Error('Instagram publishing requires a media asset with a public URL');
         }
-        if (mimeType && !mimeType.startsWith('image/')) {
-          throw new Error(`Instagram publishing only supports images right now (found ${mimeType})`);
+        const isVideo = mimeType.startsWith('video/');
+        const isImage = mimeType.startsWith('image/');
+        let result: string | { providerRef: string; canonicalUrl?: string };
+        if (isVideo && provider.postVideo) {
+          result = await provider.postVideo(
+            { caption: text, videoUrl: mediaUrl },
+            account.tokenData
+          );
+        } else if ((!mimeType || isImage) && provider.postImage) {
+          result = await provider.postImage(
+            { caption: text, imageUrl: mediaUrl },
+            account.tokenData
+          );
+        } else if (isVideo && !provider.postVideo) {
+          throw new Error('Instagram provider does not support video publishing');
+        } else {
+          throw new Error(`Unsupported Instagram media type: ${mimeType || 'unknown'}`);
         }
-
-        const result = await provider.postImage(
-          { caption: text, imageUrl: mediaUrl },
-          account.tokenData
-        );
         providerResult = typeof result === 'string' ? { providerRef: result } : result;
       } else {
         const result = await provider.postText(text, account.tokenData);
