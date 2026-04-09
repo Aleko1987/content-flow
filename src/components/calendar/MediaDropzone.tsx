@@ -330,16 +330,16 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
             return (
             <div
               key={item.id}
-              className="relative aspect-square bg-secondary rounded-lg overflow-hidden group"
+              className="relative bg-secondary rounded-lg overflow-hidden group"
             >
               {item.type === 'image' ? (
                 <img
                   src={previewUrl}
                   alt={item.fileName}
-                  className="w-full h-full object-cover"
+                  className="w-full h-32 object-contain bg-black/40"
                 />
               ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-secondary">
+                <div className="w-full h-32 flex flex-col items-center justify-center bg-secondary">
                   <Film className="h-8 w-8 text-muted-foreground mb-1" />
                   <span className="text-xs text-muted-foreground truncate px-2 w-full text-center">
                     {item.fileName}
