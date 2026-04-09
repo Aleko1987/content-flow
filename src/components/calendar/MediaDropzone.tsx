@@ -90,22 +90,41 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
       return file;
     }
 
-    // Auto-crop to square (1:1) which is always accepted.
-    const cropSize = Math.min(width, height);
-    const sx = Math.floor((width - cropSize) / 2);
-    const sy = Math.floor((height - cropSize) / 2);
-    const targetSize = 1080; // good default for IG feed
+    // Contain + pad inside an IG-safe frame so we never clip subjects.
+    const clampedAspect = Math.min(Math.max(aspect, IG_MIN_ASPECT), IG_MAX_ASPECT);
+    const base = 1080;
+    const targetWidth = clampedAspect >= 1 ? Math.round(base * clampedAspect) : base;
+    const targetHeight = clampedAspect >= 1 ? base : Math.round(base / clampedAspect);
 
     const canvas = document.createElement('canvas');
-    canvas.width = targetSize;
-    canvas.height = targetSize;
+    canvas.width = targetWidth;
+    canvas.height = targetHeight;
     const ctx = canvas.getContext('2d');
     if (!ctx) {
       bitmap.close();
       return file;
     }
 
-    ctx.drawImage(bitmap, sx, sy, cropSize, cropSize, 0, 0, targetSize, targetSize);
+    // Draw a blurred background fill for a cleaner padded result.
+    const bgScale = Math.max(targetWidth / width, targetHeight / height);
+    const bgW = Math.round(width * bgScale);
+    const bgH = Math.round(height * bgScale);
+    const bgX = Math.round((targetWidth - bgW) / 2);
+    const bgY = Math.round((targetHeight - bgH) / 2);
+    ctx.fillStyle = '#111111';
+    ctx.fillRect(0, 0, targetWidth, targetHeight);
+    ctx.save();
+    ctx.filter = 'blur(24px)';
+    ctx.drawImage(bitmap, bgX, bgY, bgW, bgH);
+    ctx.restore();
+
+    // Draw the original image fully visible (no crop), centered.
+    const containScale = Math.min(targetWidth / width, targetHeight / height);
+    const drawW = Math.round(width * containScale);
+    const drawH = Math.round(height * containScale);
+    const drawX = Math.round((targetWidth - drawW) / 2);
+    const drawY = Math.round((targetHeight - drawH) / 2);
+    ctx.drawImage(bitmap, drawX, drawY, drawW, drawH);
     bitmap.close();
 
     const blob: Blob = await new Promise((resolve, reject) => {
@@ -116,7 +135,7 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
       );
     });
 
-    const nextName = file.name.replace(/\.[^.]+$/, '') + '_ig.jpg';
+    const nextName = file.name.replace(/\.[^.]+$/, '') + '_igfit.jpg';
     return new File([blob], nextName, { type: 'image/jpeg' });
   }, []);
 
@@ -126,7 +145,7 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
     if (normalizeForInstagram && normalizedFile !== file) {
       toast({
         title: 'Adjusted for Instagram',
-        description: 'Image was auto-cropped to a square to meet Instagram aspect ratio requirements.',
+        description: 'Image was fit into an Instagram-safe frame (no crop) to preserve the full subject.',
       });
     }
 
