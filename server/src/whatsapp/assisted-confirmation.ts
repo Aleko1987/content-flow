@@ -4,7 +4,7 @@ import { db } from '../db/index.js';
 import { contentItems, scheduledPostMedia, scheduledPosts } from '../db/schema.js';
 import { logger } from '../utils/logger.js';
 import { recordPostedVideo } from '../posting-history/service.js';
-import { sendWhatsAppText } from './cloud-api.js';
+import { sendWhatsAppTemplate, sendWhatsAppText } from './cloud-api.js';
 import { EarthcureWhatsAppError, sendViaEarthcureWhatsAppWithRetry } from './earthcure-bridge.js';
 
 type IncomingWebhookPayload = {
@@ -225,6 +225,35 @@ const parseBodyParamsTemplate = (captionPreview: string, publishDate: string, pu
         .replace(/\{publish_date\}/gi, publishDate)
         .replace(/\{publish_time\}/gi, publishTime)
     );
+};
+
+const parseQuickReplyButtons = () => {
+  const buttonMapRaw = (process.env.WA_CONFIRM_BUTTON_PAYLOAD_MAP || '').trim();
+  if (buttonMapRaw) {
+    const mapped = buttonMapRaw
+      .split(',')
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .map((entry) => {
+        const [indexRaw, payloadRaw = ''] = entry.split(':');
+        const index = Number.parseInt((indexRaw || '').trim(), 10);
+        const payload = payloadRaw.trim();
+        if (Number.isNaN(index) || index < 0 || index > 9) return null;
+        return { index, payload: payload || null };
+      })
+      .filter((entry): entry is { index: number; payload: string | null } => !!entry);
+    if (mapped.length > 0) {
+      return mapped;
+    }
+  }
+
+  const yesPayload = (process.env.WA_CONFIRM_YES_PAYLOAD || '').trim();
+  const yesIndexRaw = (process.env.WA_CONFIRM_YES_BUTTON_INDEX || '0').trim();
+  const yesIndex = Number.parseInt(yesIndexRaw, 10);
+  if (!yesPayload || Number.isNaN(yesIndex)) {
+    return [] as Array<{ index: number; payload: string | null }>;
+  }
+  return [{ index: yesIndex, payload: yesPayload }];
 };
 
 const createPromptPreview = (caption: string) => {
@@ -1031,6 +1060,11 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
     publishDate: scheduledDate,
     publishTime: scheduledTime,
   });
+  const promptMode = (process.env.WA_ASSISTED_CONFIRMATION_PROMPT_MODE || 'template_first').trim().toLowerCase();
+  const templateName = (process.env.WA_CONFIRMATION_TEMPLATE_NAME || process.env.WA_TEMPLATE_NAME || '').trim();
+  const templateLanguage = (process.env.WA_CONFIRMATION_TEMPLATE_LANGUAGE || process.env.WA_TEMPLATE_LANGUAGE || 'en_US').trim();
+  const allowTemplateAttempt = promptMode !== 'text_only' && promptMode !== 'text';
+  const enforceTemplateOnly = promptMode === 'template_only' || promptMode === 'template';
 
   const existing = await loadOutboundByOperationKey(operationKey);
   if (existing) {
@@ -1083,6 +1117,58 @@ export const startAssistedConfirmationForScheduledPost = async (params: {
   }
 
   try {
+    if (allowTemplateAttempt && templateName) {
+      try {
+        const templateResult = await sendWhatsAppTemplate({
+          name: templateName,
+          language: templateLanguage,
+          bodyParams: parseBodyParamsTemplate(previewText, scheduledDate, scheduledTime),
+          quickReplyButtons: parseQuickReplyButtons(),
+          recipientPhone,
+        });
+        await updateOutboundSent({
+          operationKey,
+          status: 200,
+          providerMessageId: templateResult.messageId,
+          requestId: `wa-template:${operationId}`,
+        });
+        await upsertConfirmationRecord({
+          scheduledPostId: params.scheduledPostId,
+          recipientPhone,
+          promptMessageId: templateResult.messageId,
+          mediaQueue,
+          caption: params.caption,
+          mediaUrl: params.mediaUrl,
+          mimeType: params.mimeType ?? null,
+          operationKey,
+        });
+        logger.info('Assisted confirmation prompt sent via WhatsApp template', {
+          operationId,
+          scheduledPostId: params.scheduledPostId,
+          destination: maskPhoneForLogs(recipientPhone),
+          templateName,
+          templateLanguage,
+          providerMessageId: templateResult.messageId,
+        });
+        return { promptMessageId: templateResult.messageId };
+      } catch (templateError) {
+        const templateMessage = templateError instanceof Error ? templateError.message : String(templateError);
+        logger.warn('Assisted confirmation template prompt failed', {
+          operationId,
+          scheduledPostId: params.scheduledPostId,
+          destination: maskPhoneForLogs(recipientPhone),
+          templateName,
+          error: templateMessage,
+          fallbackToTextPrompt: !enforceTemplateOnly,
+        });
+        if (enforceTemplateOnly) {
+          throw templateError;
+        }
+      }
+    } else if (enforceTemplateOnly && !templateName) {
+      throw new Error('WA_CONFIRMATION_TEMPLATE_NAME (or WA_TEMPLATE_NAME) is required for template_only assisted prompt mode');
+    }
+
     const prompt = await sendPrompt({
       to: recipientPhone,
       body: promptText,
