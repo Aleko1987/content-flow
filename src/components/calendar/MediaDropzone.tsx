@@ -232,7 +232,12 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
       for (const { item, file } of uploadQueue) {
         uploadFileToStorage(file)
           .then((storageUrl) => {
-            updateItem(item.id, { storageUrl });
+            // Prefer uploaded/public URL preview once available so UI reflects what will be published.
+            const existing = valueRef.current.find((m) => m.id === item.id);
+            if (existing?.localObjectUrl?.startsWith('blob:')) {
+              URL.revokeObjectURL(existing.localObjectUrl);
+            }
+            updateItem(item.id, { storageUrl, localObjectUrl: storageUrl });
           })
           .catch((err) => {
             console.error('Media upload failed:', err);
@@ -321,7 +326,7 @@ export const MediaDropzone: React.FC<MediaDropzoneProps> = ({
       {value.length > 0 && (
         <div className="grid grid-cols-3 gap-2">
           {value.map(item => {
-            const previewUrl = item.localObjectUrl || item.storageUrl || '';
+            const previewUrl = item.storageUrl || item.localObjectUrl || '';
             return (
             <div
               key={item.id}
