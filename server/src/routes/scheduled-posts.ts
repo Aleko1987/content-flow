@@ -9,6 +9,22 @@ import { processDueScheduledPosts, executePost } from '../scheduled-posts/runner
 const router = Router();
 let ensureScheduledPostsSchemaPromise: Promise<void> | null = null;
 
+const isProcessDueAuthorized = (req: Request): boolean => {
+  const configuredToken = (process.env.SCHEDULED_POSTS_CRON_TOKEN || '').trim();
+  if (!configuredToken) {
+    return true;
+  }
+
+  const authHeader = String(req.headers.authorization || '').trim();
+  const bearerToken = authHeader.toLowerCase().startsWith('bearer ')
+    ? authHeader.slice(7).trim()
+    : '';
+  const headerToken = String(req.headers['x-cron-token'] || '').trim();
+  const queryToken = typeof req.query.token === 'string' ? req.query.token.trim() : '';
+
+  return bearerToken === configuredToken || headerToken === configuredToken || queryToken === configuredToken;
+};
+
 const ensureScheduledPostsSchema = async () => {
   if (!ensureScheduledPostsSchemaPromise) {
     ensureScheduledPostsSchemaPromise = (async () => {
@@ -227,15 +243,25 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-// POST /api/content-ops/scheduled-posts/process-due
-router.post('/process-due', async (_req: Request, res: Response, next: NextFunction) => {
+const runProcessDue = async (req: Request, res: Response, next: NextFunction) => {
+  if (!isProcessDueAuthorized(req)) {
+    return res.status(401).json({ error: 'Unauthorized process-due trigger' });
+  }
+
   try {
     const result = await processDueScheduledPosts();
     res.json(result ?? { processed: 0, published: 0, failed: 0 });
   } catch (error) {
     next(error);
   }
-});
+};
+
+// POST /api/content-ops/scheduled-posts/process-due
+router.post('/process-due', runProcessDue);
+
+// GET /api/content-ops/scheduled-posts/process-due
+// Useful for simple cron providers that only support GET webhooks.
+router.get('/process-due', runProcessDue);
 
 // POST /api/content-ops/scheduled-posts/:id/execute
 router.post('/:id/execute', async (req: Request, res: Response, next: NextFunction) => {
