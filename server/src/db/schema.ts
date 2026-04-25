@@ -194,3 +194,37 @@ export const connectedAccounts = pgTable('connected_accounts', {
   uniqueProvider: unique().on(table.provider),
 }));
 
+// Social event idempotency + delivery tracking
+export const socialEventDeliveries = pgTable('social_event_deliveries', {
+  sourceEventId: text('source_event_id').primaryKey(),
+  platform: varchar('platform', { length: 20 }).notNull(),
+  eventType: varchar('event_type', { length: 50 }).notNull(),
+  occurredAt: timestamp('occurred_at', { withTimezone: true }).notNull(),
+  payload: jsonb('payload').$type<Record<string, unknown>>().notNull(),
+  deliveryStatus: varchar('delivery_status', { length: 20 }).notNull().default('pending'), // pending|delivered|failed
+  deliveryAttempts: integer('delivery_attempts').notNull().default(0),
+  deliveredAt: timestamp('delivered_at', { withTimezone: true }),
+  lastError: text('last_error'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  platformIdx: index('idx_social_event_deliveries_platform').on(table.platform),
+  eventTypeIdx: index('idx_social_event_deliveries_event_type').on(table.eventType),
+  statusIdx: index('idx_social_event_deliveries_status').on(table.deliveryStatus),
+}));
+
+// ExecuteTaskRequest idempotency + response caching
+export const socialExecutionIdempotency = pgTable('social_execution_idempotency', {
+  idempotencyKey: text('idempotency_key').primaryKey(),
+  taskId: text('task_id').notNull(),
+  requestPayload: jsonb('request_payload').$type<Record<string, unknown>>().notNull(),
+  responsePayload: jsonb('response_payload').$type<Record<string, unknown>>(),
+  status: varchar('status', { length: 20 }).notNull().default('pending'),
+  providerActionId: text('provider_action_id'),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  taskIdx: index('idx_social_execution_idempotency_task').on(table.taskId),
+  statusIdx: index('idx_social_execution_idempotency_status').on(table.status),
+}));
+

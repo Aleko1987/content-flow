@@ -127,6 +127,13 @@ The server will run on `http://localhost:3001` by default.
 
 Base URL: `http://localhost:3001/api/content-ops`
 
+### DO-Socials Contract (v1)
+
+See `DO_SOCIALS_CONTRACT.md` for full cross-repo contract details, auth, idempotency, retries, and examples.
+
+- `POST /social-events/produce` - Accepts `NormalizedSocialEvent` and forwards to DO-Intent `/social-events/ingest`
+- `POST /social-execution/execute-task` - Accepts `ExecuteTaskRequest` and returns `ExecuteTaskResponse`
+
 ### Channels
 
 - `GET /channels` - Get all channels

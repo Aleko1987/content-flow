@@ -13,6 +13,13 @@ export const errorHandler = (
 ) => {
   console.error('Error:', err);
 
+  if (err instanceof Error && err.name === 'ZodError') {
+    return res.status(400).json({
+      error: 'Invalid request payload',
+      details: process.env.NODE_ENV === 'development' ? err.message : undefined,
+    });
+  }
+
   if (err && typeof err === 'object' && 'error' in err) {
     return res.status(400).json(err);
   }

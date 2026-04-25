@@ -16,6 +16,8 @@ import scheduledPostsRouter from './routes/scheduled-posts.js';
 import integrationsRouter from './routes/integrations.js';
 import whatsappRouter from './routes/whatsapp.js';
 import postedVideosRouter from './routes/posted-videos.js';
+import socialEventsRouter from './routes/social-events.js';
+import socialExecutionRouter from './routes/social-execution.js';
 import { startScheduledPostRunner } from './scheduled-posts/runner.js';
 
 // Load environment variables
@@ -230,6 +232,10 @@ app.use('/api/content-ops/integrations', integrationsRouter);
 
 // WhatsApp assisted workflow (manual status posting helper)
 app.use('/api/content-ops/whatsapp', whatsappRouter);
+
+// DO-Socials shared contract endpoints
+app.use('/api/content-ops/social-events', socialEventsRouter);
+app.use('/api/content-ops/social-execution', socialExecutionRouter);
 
 // Error handler (must be last)
 app.use(errorHandler);
