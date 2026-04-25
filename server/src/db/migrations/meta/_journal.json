@@ -8,6 +8,13 @@
       "when": 1769103633696,
       "tag": "0000_eager_doctor_doom",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1777118500000,
+      "tag": "0012_social_contract_idempotency",
+      "breakpoints": true
     }
   ]
 }
