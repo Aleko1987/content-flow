@@ -2,6 +2,31 @@
 
 This repository acts as **DO-Socials** for the cross-repo integration.
 
+## Implementation Progress (Apr 2026)
+
+### Completed
+
+- DO-Socials execute endpoint is live at `POST /api/content-ops/social-execution/execute-task`.
+- DO-Socials event producer endpoint is live at `POST /api/content-ops/social-events/produce`.
+- Service-to-service auth is enforced on both endpoints.
+- Execution idempotency is confirmed: duplicate `idempotency_key` returned deterministic identical responses.
+- Cross-repo execution from DO-Intent now reaches DO-Socials and persists returned statuses.
+
+### Validated Runtime Evidence
+
+- Direct execute probe returned `200` contract payload:
+  - `status: "unsupported"`
+  - `reason_code: "UNSUPPORTED_ACTION"`
+- Duplicate execute probe with same key returned identical payload, including same `occurred_at`.
+- DO-Intent execute diagnostics showed correct mapping when unsupported:
+  - execution status `unsupported`
+  - task status `unsupported`
+
+### Remaining Functional Gap (Expected)
+
+- A "succeeded" path is not exercised by current DO-Intent event-to-action mapping in dogfood flows.
+- Current adapter support is intentionally narrow (`whatsapp + dm` only for successful execution path).
+
 ## Endpoints Implemented
 
 - `POST /api/content-ops/social-events/produce`
@@ -86,6 +111,12 @@ Request HMAC format:
 
 - Inbound event idempotency keyed by `source_event_id` in `social_event_deliveries`.
 - Execution idempotency keyed by `idempotency_key` in `social_execution_idempotency`.
+
+## Deployment Notes and Gotchas
+
+- If execute calls return `500` with relation errors for `social_execution_idempotency`, ensure migration `0012_social_contract_idempotency.sql` is applied.
+- If DO-Intent execute attempts fail with URL parse errors, check DO-Intent env values for placeholders such as `https://<content-flow-backend>...`.
+- Prefer setting explicit `DO_SOCIALS_EXECUTE_URL` in DO-Intent to avoid base URL ambiguity.
 
 ## Retry and Throttle Policy
 

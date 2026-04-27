@@ -65,6 +65,23 @@ See `AI_FILEMAP.md` for detailed file organization and `AI_CONTEXT.md` for archi
 
 ### Content Ops
 - See `API_INTEGRATION.md` for full content ops API documentation
+- DO-Socials v1 contract details and runtime notes: `server/DO_SOCIALS_CONTRACT.md`
+
+## Recent Progress (Apr 2026)
+
+- Added DO-Socials shared contract implementation in `server/`:
+  - strict v1 schemas for event and execution payloads
+  - service auth (Bearer/HMAC), idempotency, throttling, guardrails
+  - endpoints:
+    - `POST /api/content-ops/social-events/produce`
+    - `POST /api/content-ops/social-execution/execute-task`
+- Added migration for social idempotency persistence:
+  - `server/src/db/migrations/0012_social_contract_idempotency.sql`
+- Added tests for schema compatibility, retries, blocked/unsupported handling, and idempotency replay.
+- Verified cross-repo dogfood path with DO-Intent:
+  - ingest accepted/deduped behavior
+  - execute path status persistence (`unsupported` validated)
+  - deterministic idempotency replay on duplicate key
 
 ## Tech Stack
 

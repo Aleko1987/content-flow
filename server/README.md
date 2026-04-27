@@ -134,6 +134,13 @@ See `DO_SOCIALS_CONTRACT.md` for full cross-repo contract details, auth, idempot
 - `POST /social-events/produce` - Accepts `NormalizedSocialEvent` and forwards to DO-Intent `/social-events/ingest`
 - `POST /social-execution/execute-task` - Accepts `ExecuteTaskRequest` and returns `ExecuteTaskResponse`
 
+#### Current verification status
+
+- Contract ingestion and dedupe behavior validated against DO-Intent.
+- DO-Socials execute endpoint validated with authenticated probes.
+- Idempotency verified: duplicate execution requests with same `idempotency_key` return deterministic replay.
+- Unsupported action paths validated and persisted correctly by DO-Intent.
+
 ### Channels
 
 - `GET /channels` - Get all channels
@@ -344,6 +351,17 @@ try {
    ```bash
    cd server && npm run db:migrate
    ```
+   - If using startup migration commands, ensure migration metadata includes all migration tags.
+   - For this contract work, migration `0012_social_contract_idempotency.sql` must be applied.
+
+### Production troubleshooting notes (DO-Socials integration)
+
+- `401 {"error":"Unauthorized service request"}` on execute endpoint:
+  - Verify `DO_SOCIALS_AUTH_BEARER_TOKEN` matches caller token exactly.
+- `500` with missing relation `social_execution_idempotency`:
+  - Run migrations and confirm `0012_social_contract_idempotency.sql` is registered/applied.
+- DO-Intent returns `network_error` with URL parse failure:
+  - Fix DO-Intent env from placeholder URL to actual backend URL, preferably via explicit `DO_SOCIALS_EXECUTE_URL`.
 
 5. **Update your client** to use the production API URL:
    ```typescript
