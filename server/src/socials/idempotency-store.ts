@@ -1,6 +1,6 @@
-import { eq, sql } from 'drizzle-orm';
+import { and, eq, gte, sql } from 'drizzle-orm';
 import { db } from '../db/index.js';
-import { socialEventDeliveries, socialExecutionIdempotency } from '../db/schema.js';
+import { socialEventDeliveries, socialExecutionAttempts, socialExecutionIdempotency } from '../db/schema.js';
 import type { ExecuteTaskRequest, ExecuteTaskResponse, NormalizedSocialEvent } from '../social-contract/schemas.js';
 
 export const socialIdempotencyStore = {
@@ -95,5 +95,74 @@ export const socialIdempotencyStore = {
         updatedAt: new Date(),
       })
       .where(eq(socialExecutionIdempotency.idempotencyKey, request.idempotency_key));
+  },
+
+  async logExecutionAttempt(params: {
+    attemptId: string;
+    correlationId: string;
+    request: ExecuteTaskRequest;
+    response: ExecuteTaskResponse;
+    accountRef: string | null;
+    providerPayload: Record<string, unknown> | null;
+  }) {
+    await db.insert(socialExecutionAttempts).values({
+      attemptId: params.attemptId,
+      idempotencyKey: params.request.idempotency_key,
+      taskId: params.request.task_id,
+      platform: params.request.platform,
+      actionType: params.request.action_type,
+      accountRef: params.accountRef,
+      targetRef: params.request.target_ref,
+      requestPayload: params.request as Record<string, unknown>,
+      responsePayload: params.response as Record<string, unknown>,
+      providerPayload: params.providerPayload,
+      status: params.response.status,
+      reasonCode: params.response.reason_code,
+      correlationId: params.correlationId,
+      createdAt: new Date(),
+    });
+  },
+
+  async countRecentAttempts(params: {
+    platform: string;
+    actionType: string;
+    accountRef: string;
+    since: Date;
+  }) {
+    const rows = await db
+      .select({ count: sql<number>`count(*)::int` })
+      .from(socialExecutionAttempts)
+      .where(
+        and(
+          eq(socialExecutionAttempts.platform, params.platform),
+          eq(socialExecutionAttempts.actionType, params.actionType),
+          eq(socialExecutionAttempts.accountRef, params.accountRef),
+          gte(socialExecutionAttempts.createdAt, params.since)
+        )
+      );
+    return rows[0]?.count ?? 0;
+  },
+
+  async hasRecentTargetAttempt(params: {
+    platform: string;
+    actionType: string;
+    accountRef: string;
+    targetRef: string;
+    since: Date;
+  }) {
+    const rows = await db
+      .select({ targetRef: socialExecutionAttempts.targetRef })
+      .from(socialExecutionAttempts)
+      .where(
+        and(
+          eq(socialExecutionAttempts.platform, params.platform),
+          eq(socialExecutionAttempts.actionType, params.actionType),
+          eq(socialExecutionAttempts.accountRef, params.accountRef),
+          eq(socialExecutionAttempts.targetRef, params.targetRef),
+          gte(socialExecutionAttempts.createdAt, params.since)
+        )
+      )
+      .limit(1);
+    return rows.length > 0;
   },
 };

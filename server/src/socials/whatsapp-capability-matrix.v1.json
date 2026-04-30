@@ -1,0 +1,140 @@
+{
+  "platform": "whatsapp",
+  "version": "v1",
+  "reviewed_at": "2026-04-30",
+  "source": "meta_official_docs",
+  "actions": [
+    {
+      "action_type": "dm",
+      "supported": true,
+      "api_endpoints": ["POST EARTHCURE_WHATSAPP_SEND_URL bridge"],
+      "required_scopes": ["Bridge token authorization"],
+      "account_prerequisites": ["WhatsApp bridge configured in environment"],
+      "rate_limit_constraints": ["Bridge and provider throughput limits"],
+      "policy_constraints": ["Message template/session policy enforced upstream"],
+      "fallback_behavior": "return failed on bridge/provider rejection",
+      "reason_code_when_unsupported": null,
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "like",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "comment",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "reply",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "share",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "follow",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "add",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "group_join",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "account_follow",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "mention",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    },
+    {
+      "action_type": "story_reply",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["WhatsApp does not support this action type in execution contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/whatsapp/cloud-api"]
+    }
+  ]
+}

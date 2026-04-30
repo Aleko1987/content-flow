@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { executeSocialTask } from './execution-service.js';
+import { executeSocialTask, getSocialExecutionCapabilities } from './execution-service.js';
 import type { ExecuteTaskRequest, ExecuteTaskResponse } from '../social-contract/schemas.js';
 
 const baseRequest: ExecuteTaskRequest = {
@@ -23,6 +23,9 @@ const makeStore = () => {
     saveExecutionResponse: async (request: ExecuteTaskRequest, response: ExecuteTaskResponse) => {
       cache.set(request.idempotency_key, response);
     },
+    logExecutionAttempt: async () => {},
+    countRecentAttempts: async () => 0,
+    hasRecentTargetAttempt: async () => false,
   };
 };
 
@@ -64,7 +67,7 @@ test('blocks risky action without human approval metadata', async () => {
   });
 
   assert.equal(response.status, 'blocked');
-  assert.equal(response.reason_code, 'HUMAN_APPROVAL_REQUIRED');
+  assert.equal(response.reason_code, 'human_approval_required');
 });
 
 test('returns unsupported for non-dm whatsapp actions', async () => {
@@ -84,7 +87,7 @@ test('returns unsupported for non-dm whatsapp actions', async () => {
   );
 
   assert.equal(response.status, 'unsupported');
-  assert.equal(response.reason_code, 'UNSUPPORTED_ACTION');
+  assert.equal(response.reason_code, 'action_not_supported_by_provider');
 });
 
 test('returns blocked when throttled', async () => {
@@ -98,7 +101,7 @@ test('returns blocked when throttled', async () => {
   );
 
   assert.equal(response.status, 'blocked');
-  assert.equal(response.reason_code, 'THROTTLED');
+  assert.equal(response.reason_code, 'throttled_by_policy');
 });
 
 test('returns succeeded for approved whatsapp dm action', async () => {
@@ -116,4 +119,32 @@ test('returns succeeded for approved whatsapp dm action', async () => {
 
   assert.equal(response.status, 'succeeded');
   assert.equal(response.provider_action_id, 'wamid.555');
+});
+
+test('returns deterministic unsupported for facebook like action', async () => {
+  const response = await executeSocialTask(
+    {
+      ...baseRequest,
+      platform: 'facebook',
+      action_type: 'like',
+      idempotency_key: 'task_uuid:6',
+      metadata: { human_approved: true },
+    },
+    {
+      store: makeStore(),
+      throttle: { allow: () => ({ allowed: true }) },
+      sendWhatsAppDm: async () => ({ providerActionId: 'unused', raw: {} }),
+    }
+  );
+
+  assert.equal(response.status, 'unsupported');
+  assert.equal(response.reason_code, 'action_not_supported_by_provider');
+});
+
+test('returns capability matrix for all platforms', () => {
+  const capabilities = getSocialExecutionCapabilities('all');
+  assert.ok(capabilities);
+  assert.ok('instagram' in (capabilities as Record<string, unknown>));
+  assert.ok('facebook' in (capabilities as Record<string, unknown>));
+  assert.ok('whatsapp' in (capabilities as Record<string, unknown>));
 });

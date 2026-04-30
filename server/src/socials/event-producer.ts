@@ -21,7 +21,11 @@ type ProducerDeps = {
 };
 
 const buildAuthHeaders = (payload: string): Record<string, string> => {
-  const bearerToken = (process.env.DO_INTENT_AUTH_BEARER_TOKEN || '').trim();
+  const bearerToken = (
+    process.env.DO_SOCIALS_INGEST_TOKEN ||
+    process.env.DO_INTENT_AUTH_BEARER_TOKEN ||
+    ''
+  ).trim();
   if (bearerToken) {
     return { Authorization: `Bearer ${bearerToken}` };
   }
@@ -40,11 +44,17 @@ const buildAuthHeaders = (payload: string): Record<string, string> => {
 };
 
 const resolveTargetUrl = () => {
-  const explicit = (process.env.DO_INTENT_SOCIAL_EVENTS_INGEST_URL || '').trim();
+  const explicit = (
+    process.env.DO_INTENT_SOCIAL_INGEST_URL ||
+    process.env.DO_INTENT_SOCIAL_EVENTS_INGEST_URL ||
+    ''
+  ).trim();
   if (explicit) return explicit;
   const baseUrl = (process.env.DO_INTENT_BASE_URL || '').trim();
   if (!baseUrl) {
-    throw new Error('Missing DO_INTENT_SOCIAL_EVENTS_INGEST_URL or DO_INTENT_BASE_URL');
+    throw new Error(
+      'Missing DO_INTENT_SOCIAL_INGEST_URL (or DO_INTENT_SOCIAL_EVENTS_INGEST_URL) or DO_INTENT_BASE_URL'
+    );
   }
   return `${baseUrl.replace(/\/+$/, '')}/social-events/ingest`;
 };

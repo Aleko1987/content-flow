@@ -12,7 +12,19 @@ export const eventTypeSchema = z.enum([
   'post_activity',
   'profile_activity',
 ]);
-export const actionTypeSchema = z.enum(['like', 'comment', 'reply', 'dm']);
+export const actionTypeSchema = z.enum([
+  'like',
+  'comment',
+  'reply',
+  'dm',
+  'share',
+  'follow',
+  'add',
+  'group_join',
+  'account_follow',
+  'mention',
+  'story_reply',
+]);
 export const executeStatusSchema = z.enum(['succeeded', 'failed', 'blocked', 'unsupported']);
 
 export const normalizedSocialEventSchema = z

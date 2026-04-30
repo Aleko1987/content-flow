@@ -42,6 +42,21 @@ test('ExecuteTaskRequest rejects unknown fields to prevent schema drift', () => 
   );
 });
 
+test('ExecuteTaskRequest accepts extended v1 action types', () => {
+  const parsed = executeTaskRequestSchema.parse({
+    version: 'v1',
+    task_id: 'task_2',
+    idempotency_key: 'task_2:1',
+    platform: 'instagram',
+    action_type: 'story_reply',
+    target_ref: '1789',
+    lead_ref: null,
+    content: 'Thanks for reaching out.',
+    metadata: {},
+  });
+  assert.equal(parsed.action_type, 'story_reply');
+});
+
 test('ExecuteTaskResponse validates shared status values', () => {
   const parsed = executeTaskResponseSchema.parse({
     version: 'v1',

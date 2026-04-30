@@ -228,3 +228,35 @@ export const socialExecutionIdempotency = pgTable('social_execution_idempotency'
   statusIdx: index('idx_social_execution_idempotency_status').on(table.status),
 }));
 
+// Audit trail for every execution attempt (including blocked/unsupported/failures)
+export const socialExecutionAttempts = pgTable('social_execution_attempts', {
+  attemptId: text('attempt_id').primaryKey(),
+  idempotencyKey: text('idempotency_key').notNull(),
+  taskId: text('task_id').notNull(),
+  platform: varchar('platform', { length: 20 }).notNull(),
+  actionType: varchar('action_type', { length: 50 }).notNull(),
+  accountRef: text('account_ref'),
+  targetRef: text('target_ref').notNull(),
+  requestPayload: jsonb('request_payload').$type<Record<string, unknown>>().notNull(),
+  responsePayload: jsonb('response_payload').$type<Record<string, unknown>>().notNull(),
+  providerPayload: jsonb('provider_payload').$type<Record<string, unknown>>(),
+  status: varchar('status', { length: 20 }).notNull(),
+  reasonCode: text('reason_code'),
+  correlationId: text('correlation_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  idempotencyIdx: index('idx_social_execution_attempts_idempotency').on(table.idempotencyKey),
+  statusIdx: index('idx_social_execution_attempts_status').on(table.status),
+  accountActionIdx: index('idx_social_execution_attempts_account_action').on(table.accountRef, table.actionType, table.createdAt),
+}));
+
+// Instagram inbound ownership mapping (account/page -> DO-Intent owner user)
+export const instagramOwnerUserMap = pgTable('instagram_owner_user_map', {
+  accountRef: text('account_ref').primaryKey(),
+  ownerUserId: text('owner_user_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),
+}, (table) => ({
+  ownerUserIdx: index('idx_instagram_owner_user_map_owner_user').on(table.ownerUserId),
+}));
+

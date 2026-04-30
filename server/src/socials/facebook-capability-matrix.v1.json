@@ -1,0 +1,140 @@
+{
+  "platform": "facebook",
+  "version": "v1",
+  "reviewed_at": "2026-04-30",
+  "source": "meta_official_docs",
+  "actions": [
+    {
+      "action_type": "dm",
+      "supported": true,
+      "api_endpoints": ["POST /{page-id}/messages"],
+      "required_scopes": ["pages_messaging"],
+      "account_prerequisites": ["Facebook Page connected via OAuth with page access token"],
+      "rate_limit_constraints": ["Provider-enforced Messenger Platform limits"],
+      "policy_constraints": ["Messenger platform policy and user messaging windows apply"],
+      "fallback_behavior": "return failed when provider rejects policy/window",
+      "reason_code_when_unsupported": null,
+      "docs_urls": ["https://developers.facebook.com/docs/messenger-platform/reference/send-api/"]
+    },
+    {
+      "action_type": "comment",
+      "supported": true,
+      "api_endpoints": ["POST /{object-id}/comments?message={message}"],
+      "required_scopes": ["pages_manage_engagement"],
+      "account_prerequisites": ["Facebook Page connected via OAuth with page access token"],
+      "rate_limit_constraints": ["Provider-enforced Graph API limits"],
+      "policy_constraints": ["Target object must allow comments"],
+      "fallback_behavior": "return failed when target is not commentable",
+      "reason_code_when_unsupported": null,
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api/reference/object/comments/"]
+    },
+    {
+      "action_type": "reply",
+      "supported": true,
+      "api_endpoints": ["POST /{comment-id}/comments?message={message}"],
+      "required_scopes": ["pages_manage_engagement"],
+      "account_prerequisites": ["Facebook Page connected via OAuth with page access token"],
+      "rate_limit_constraints": ["Provider-enforced Graph API limits"],
+      "policy_constraints": ["Target must be a valid Facebook comment ID"],
+      "fallback_behavior": "return failed when reply target is invalid",
+      "reason_code_when_unsupported": null,
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api/reference/object/comments/"]
+    },
+    {
+      "action_type": "like",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["No safe generic like automation endpoint in current DO-Socials integration"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "share",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["No generic share action in current execution contract mapping"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "follow",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["Follow automation is not exposed through this integration"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "account_follow",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["Follow automation is not exposed through this integration"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "add",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["No Facebook API concept for this execution action"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "group_join",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["Group join automation is not supported in this integration"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "mention",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["No standalone mention action endpoint in this execution mapping"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    },
+    {
+      "action_type": "story_reply",
+      "supported": false,
+      "api_endpoints": [],
+      "required_scopes": [],
+      "account_prerequisites": [],
+      "rate_limit_constraints": [],
+      "policy_constraints": ["Story reply action is not mapped for Facebook in this contract"],
+      "fallback_behavior": "return unsupported",
+      "reason_code_when_unsupported": "action_not_supported_by_provider",
+      "docs_urls": ["https://developers.facebook.com/docs/graph-api"]
+    }
+  ]
+}

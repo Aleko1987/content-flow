@@ -15,6 +15,7 @@ import seedRouter from './routes/seed.js';
 import scheduledPostsRouter from './routes/scheduled-posts.js';
 import integrationsRouter from './routes/integrations.js';
 import whatsappRouter from './routes/whatsapp.js';
+import instagramWebhookRouter from './routes/instagram-webhook.js';
 import postedVideosRouter from './routes/posted-videos.js';
 import socialEventsRouter from './routes/social-events.js';
 import socialExecutionRouter from './routes/social-execution.js';
@@ -232,6 +233,9 @@ app.use('/api/content-ops/integrations', integrationsRouter);
 
 // WhatsApp assisted workflow (manual status posting helper)
 app.use('/api/content-ops/whatsapp', whatsappRouter);
+
+// Instagram inbound webhook intake
+app.use('/api/content-ops/instagram', instagramWebhookRouter);
 
 // DO-Socials shared contract endpoints
 app.use('/api/content-ops/social-events', socialEventsRouter);

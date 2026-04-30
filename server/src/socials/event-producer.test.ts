@@ -4,14 +4,18 @@ import { produceNormalizedSocialEvent } from './event-producer.js';
 import type { NormalizedSocialEvent } from '../social-contract/schemas.js';
 
 const originalEnv = {
+  DO_INTENT_SOCIAL_INGEST_URL: process.env.DO_INTENT_SOCIAL_INGEST_URL,
   DO_INTENT_SOCIAL_EVENTS_INGEST_URL: process.env.DO_INTENT_SOCIAL_EVENTS_INGEST_URL,
   DO_SOCIALS_EVENT_RETRY_MAX_ATTEMPTS: process.env.DO_SOCIALS_EVENT_RETRY_MAX_ATTEMPTS,
+  DO_SOCIALS_INGEST_TOKEN: process.env.DO_SOCIALS_INGEST_TOKEN,
   DO_INTENT_AUTH_BEARER_TOKEN: process.env.DO_INTENT_AUTH_BEARER_TOKEN,
 };
 
 test.afterEach(() => {
+  process.env.DO_INTENT_SOCIAL_INGEST_URL = originalEnv.DO_INTENT_SOCIAL_INGEST_URL;
   process.env.DO_INTENT_SOCIAL_EVENTS_INGEST_URL = originalEnv.DO_INTENT_SOCIAL_EVENTS_INGEST_URL;
   process.env.DO_SOCIALS_EVENT_RETRY_MAX_ATTEMPTS = originalEnv.DO_SOCIALS_EVENT_RETRY_MAX_ATTEMPTS;
+  process.env.DO_SOCIALS_INGEST_TOKEN = originalEnv.DO_SOCIALS_INGEST_TOKEN;
   process.env.DO_INTENT_AUTH_BEARER_TOKEN = originalEnv.DO_INTENT_AUTH_BEARER_TOKEN;
 });
 
@@ -72,8 +76,10 @@ test('dedupes event already marked delivered', async () => {
 });
 
 test('retries transient upstream failure then succeeds', async () => {
+  process.env.DO_INTENT_SOCIAL_INGEST_URL = '';
   process.env.DO_INTENT_SOCIAL_EVENTS_INGEST_URL = 'https://intent.local/social-events/ingest';
   process.env.DO_SOCIALS_EVENT_RETRY_MAX_ATTEMPTS = '2';
+  process.env.DO_SOCIALS_INGEST_TOKEN = '';
   process.env.DO_INTENT_AUTH_BEARER_TOKEN = 'token';
 
   const deps = makeStore();
@@ -103,4 +109,34 @@ test('retries transient upstream failure then succeeds', async () => {
   assert.equal(callCount, 2);
   assert.equal(observed.status, 'delivered');
   assert.equal(observed.attempts >= 2, true);
+});
+
+test('prefers alias env vars for URL and bearer token', async () => {
+  process.env.DO_INTENT_SOCIAL_INGEST_URL = 'https://intent-alias.local/social-events/ingest';
+  process.env.DO_INTENT_SOCIAL_EVENTS_INGEST_URL = 'https://intent-old.local/social-events/ingest';
+  process.env.DO_SOCIALS_EVENT_RETRY_MAX_ATTEMPTS = '1';
+  process.env.DO_SOCIALS_INGEST_TOKEN = 'alias-token';
+  process.env.DO_INTENT_AUTH_BEARER_TOKEN = 'old-token';
+
+  const deps = makeStore();
+  let observedUrl = '';
+  let observedAuth = '';
+
+  const result = await produceNormalizedSocialEvent(eventPayload, {
+    fetchImpl: (async (url: string | URL, init?: RequestInit) => {
+      observedUrl = String(url);
+      const headers = new Headers(init?.headers);
+      observedAuth = headers.get('Authorization') || '';
+      return {
+        ok: true,
+        status: 202,
+        text: async () => '',
+      } as Response;
+    }) as typeof fetch,
+    store: deps.store,
+  });
+
+  assert.equal(result.delivered, true);
+  assert.equal(observedUrl, 'https://intent-alias.local/social-events/ingest');
+  assert.equal(observedAuth, 'Bearer alias-token');
 });

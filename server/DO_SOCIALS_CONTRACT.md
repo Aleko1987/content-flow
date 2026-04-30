@@ -8,6 +8,7 @@ This repository acts as **DO-Socials** for the cross-repo integration.
 
 - DO-Socials execute endpoint is live at `POST /api/content-ops/social-execution/execute-task`.
 - DO-Socials event producer endpoint is live at `POST /api/content-ops/social-events/produce`.
+- Instagram inbound webhook intake is live at `GET/POST /api/content-ops/instagram/webhook`.
 - Service-to-service auth is enforced on both endpoints.
 - Execution idempotency is confirmed: duplicate `idempotency_key` returned deterministic identical responses.
 - Cross-repo execution from DO-Intent now reaches DO-Socials and persists returned statuses.
@@ -22,16 +23,21 @@ This repository acts as **DO-Socials** for the cross-repo integration.
   - execution status `unsupported`
   - task status `unsupported`
 
-### Remaining Functional Gap (Expected)
+### Current Engine Scope (Apr 2026)
 
-- A "succeeded" path is not exercised by current DO-Intent event-to-action mapping in dogfood flows.
-- Current adapter support is intentionally narrow (`whatsapp + dm` only for successful execution path).
+- Execution framework is now capability-driven for Instagram with explicit support vs unsupported routing.
+- Unsupported actions never return success and include stable deterministic reason codes.
+- Every attempt is audit-logged to `social_execution_attempts`.
 
 ## Endpoints Implemented
 
 - `POST /api/content-ops/social-events/produce`
   - Accepts `NormalizedSocialEvent` (`v1`) and forwards to DO-Intent `POST /social-events/ingest`.
   - Enforces service-to-service auth and source-event idempotency.
+- `GET/POST /api/content-ops/instagram/webhook`
+  - Accepts inbound Instagram webhook events (DM/comment/reply).
+  - Normalizes each inbound unit to `NormalizedSocialEvent` (`v1`) and forwards via producer to DO-Intent `/social-events/ingest`.
+  - Requires DB mapping from IG account/page `account_ref` to `metadata.owner_user_id` (`instagram_owner_user_map` table).
 - `POST /api/content-ops/social-execution/execute-task`
   - Accepts `ExecuteTaskRequest` (`v1`) and returns `ExecuteTaskResponse` (`v1`).
   - Enforces service-to-service auth, idempotency, throttling, and policy guardrails.
@@ -97,10 +103,16 @@ Service-to-service auth is required for both endpoints:
 
 - **Bearer mode**:
   - Inbound validation with `DO_SOCIALS_AUTH_BEARER_TOKEN`
-  - Outbound to DO-Intent with `DO_INTENT_AUTH_BEARER_TOKEN`
+  - Outbound to DO-Intent with `DO_SOCIALS_INGEST_TOKEN` (fallback: `DO_INTENT_AUTH_BEARER_TOKEN`)
 - **HMAC mode**:
   - Inbound validation with `DO_SOCIALS_AUTH_HMAC_SECRET`
   - Outbound signing with `DO_INTENT_AUTH_HMAC_SECRET`
+
+Outbound ingest URL precedence:
+
+1. `DO_INTENT_SOCIAL_INGEST_URL`
+2. `DO_INTENT_SOCIAL_EVENTS_INGEST_URL` (legacy)
+3. `${DO_INTENT_BASE_URL}/social-events/ingest`
 
 Request HMAC format:
 
@@ -125,12 +137,43 @@ Request HMAC format:
   - `DO_SOCIALS_THROTTLE_WINDOW_MS`
   - `DO_SOCIALS_THROTTLE_MAX_PER_WINDOW`
 
-## Unsupported Actions (Current)
+## Instagram Capability Matrix
 
-- `instagram`: `like`, `comment`, `reply`, `dm` -> `status="unsupported"`
-  - Reason: this repo currently has publishing adapters, not moderation/reply APIs for those actions.
-- `facebook`: `like`, `comment`, `reply`, `dm` -> `status="unsupported"`
-  - Reason: no comment/reply/DM execution adapter implemented yet.
-- `whatsapp`: only `dm` is supported; other actions return `unsupported`.
+See:
 
-This is intentionally conservative and backward-compatible. Risky actions still default to blocked unless `metadata.human_approved=true`.
+- `docs/instagram-capability-matrix.md` (human readable)
+- `src/socials/instagram-capability-matrix.v1.json` (machine readable)
+- `GET /api/content-ops/social-execution/capabilities/instagram` (service endpoint)
+
+## Cross-Platform Capability Matrix
+
+Capability matrices are available for all connected execution platforms:
+
+- `GET /api/content-ops/social-execution/capabilities` (all platforms)
+- `GET /api/content-ops/social-execution/capabilities/facebook`
+- `GET /api/content-ops/social-execution/capabilities/whatsapp`
+
+Machine-readable files:
+
+- `src/socials/instagram-capability-matrix.v1.json`
+- `src/socials/facebook-capability-matrix.v1.json`
+- `src/socials/whatsapp-capability-matrix.v1.json`
+
+### Deterministic Reason Codes (v1)
+
+Primary reason codes returned by execution responses:
+
+- `action_not_supported_by_provider`
+- `missing_content`
+- `missing_required_metadata`
+- `missing_provider_credentials`
+- `throttled_by_policy`
+- `human_approval_required`
+- `provider_permission_missing`
+- `provider_rate_limited`
+- `provider_auth_failed`
+- `provider_request_failed`
+- `risk_daily_cap_exceeded`
+- `risk_cooldown_active`
+- `risk_duplicate_target_suppressed`
+- `execution_error`
