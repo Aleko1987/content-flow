@@ -27,6 +27,84 @@ const ALL_PLATFORMS: Platform[] = ['instagram', 'facebook', 'whatsapp'];
 const buildTaskId = () => `task_${Date.now()}`;
 const buildIdempotencyKey = (taskId: string) => `${taskId}:${Date.now()}`;
 
+type ActionPreset = {
+  id: string;
+  label: string;
+  description: string;
+  platform: Platform;
+  actionType: string;
+  targetRef: string;
+  content: string;
+  metadata: Record<string, unknown>;
+};
+
+const ACTION_PRESETS: ActionPreset[] = [
+  {
+    id: 'instagram-mention',
+    label: 'Instagram Mention Reply',
+    description: 'Reply where your account is @mentioned',
+    platform: 'instagram',
+    actionType: 'mention',
+    targetRef: '17841400000000000',
+    content: 'Thanks for the mention. Happy to help.',
+    metadata: {
+      human_approved: true,
+      media_id: '17900000000000000',
+      comment_id: '17910000000000000',
+    },
+  },
+  {
+    id: 'instagram-dm',
+    label: 'Instagram DM',
+    description: 'Send Instagram direct message',
+    platform: 'instagram',
+    actionType: 'dm',
+    targetRef: '17890000000000000',
+    content: 'Thanks for reaching out. Our team will follow up shortly.',
+    metadata: {
+      human_approved: true,
+      recipient_igsid: '17890000000000000',
+    },
+  },
+  {
+    id: 'facebook-dm',
+    label: 'Facebook DM',
+    description: 'Send message to Facebook recipient',
+    platform: 'facebook',
+    actionType: 'dm',
+    targetRef: '1234567890123456',
+    content: 'Thanks for your message. We will get back to you soon.',
+    metadata: {
+      human_approved: true,
+      recipient_psid: '1234567890123456',
+    },
+  },
+  {
+    id: 'facebook-reply',
+    label: 'Facebook Comment Reply',
+    description: 'Reply to a Facebook comment',
+    platform: 'facebook',
+    actionType: 'reply',
+    targetRef: '987654321000000',
+    content: 'Thanks for your comment.',
+    metadata: {
+      human_approved: true,
+    },
+  },
+  {
+    id: 'whatsapp-dm',
+    label: 'WhatsApp DM',
+    description: 'Send WhatsApp outbound message',
+    platform: 'whatsapp',
+    actionType: 'dm',
+    targetRef: '+27123456789',
+    content: 'Hello. This is a test outbound message from DO-Socials.',
+    metadata: {
+      human_approved: true,
+    },
+  },
+];
+
 const supportedActions = (matrix?: ApiSocialCapabilityMatrix | null) =>
   (matrix?.actions || []).filter((action) => action.supported);
 
@@ -175,6 +253,22 @@ export const SocialActionsTab: React.FC = () => {
     const nextTaskId = buildTaskId();
     setTaskId(nextTaskId);
     setIdempotencyKey(buildIdempotencyKey(nextTaskId));
+  };
+
+  const applyPreset = (preset: ActionPreset) => {
+    const nextTaskId = buildTaskId();
+    setPlatform(preset.platform);
+    setActionType(preset.actionType);
+    setTaskId(nextTaskId);
+    setIdempotencyKey(buildIdempotencyKey(nextTaskId));
+    setTargetRef(preset.targetRef);
+    setLeadRef('');
+    setContent(preset.content);
+    setMetadataJson(JSON.stringify(preset.metadata, null, 2));
+    toast({
+      title: `Preset applied: ${preset.label}`,
+      description: preset.description,
+    });
   };
 
   const handleSubmit = async () => {
@@ -358,6 +452,26 @@ export const SocialActionsTab: React.FC = () => {
           <CardDescription>Submits `POST /api/content-ops/social-execution/execute-task` with v1 contract.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-2">
+            <Label>Quick presets</Label>
+            <div className="flex flex-wrap gap-2">
+              {ACTION_PRESETS.map((preset) => (
+                <Button
+                  key={preset.id}
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => applyPreset(preset)}
+                >
+                  {preset.label}
+                </Button>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Presets populate platform, action, target, content, and metadata JSON. Replace sample IDs before execution.
+            </p>
+          </div>
+
           <div className="grid gap-3 md:grid-cols-2">
             <div>
               <Label>Platform</Label>
