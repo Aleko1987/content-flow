@@ -1,6 +1,6 @@
 import React from 'react';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Megaphone, LayoutGrid, Send, FileText, Settings, Calendar } from 'lucide-react';
+import { Megaphone, LayoutGrid, Send, FileText, Settings, Calendar, Bot } from 'lucide-react';
 
 interface MarketingNavProps {
   activeTab: string;
@@ -53,6 +53,13 @@ export const MarketingNav: React.FC<MarketingNavProps> = ({ activeTab, onTabChan
               >
                 <FileText className="h-4 w-4" />
                 <span className="hidden sm:inline">Logs</span>
+              </TabsTrigger>
+              <TabsTrigger
+                value="social-actions"
+                className="flex items-center gap-2 flex-1 data-[state=active]:bg-primary data-[state=active]:text-primary-foreground"
+              >
+                <Bot className="h-4 w-4" />
+                <span className="hidden sm:inline">Social Actions</span>
               </TabsTrigger>
               <TabsTrigger 
                 value="settings" 

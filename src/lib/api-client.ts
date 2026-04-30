@@ -163,6 +163,61 @@ export interface ApiIntegrationsResponse {
   providers: ApiIntegrationProvider[];
 }
 
+export interface ApiSocialCapabilityEntry {
+  action_type: string;
+  supported: boolean;
+  api_endpoints: string[];
+  required_scopes: string[];
+  account_prerequisites: string[];
+  rate_limit_constraints: string[];
+  policy_constraints: string[];
+  fallback_behavior: string;
+  reason_code_when_unsupported: string | null;
+  docs_urls: string[];
+}
+
+export interface ApiSocialCapabilityMatrix {
+  platform: string;
+  version: 'v1';
+  reviewed_at: string;
+  source: string;
+  actions: ApiSocialCapabilityEntry[];
+}
+
+export interface ApiExecuteTaskRequest {
+  version: 'v1';
+  task_id: string;
+  idempotency_key: string;
+  platform: 'instagram' | 'facebook' | 'whatsapp';
+  action_type: string;
+  target_ref: string;
+  lead_ref: string | null;
+  content: string | null;
+  metadata: Record<string, unknown>;
+}
+
+export interface ApiExecuteTaskResponse {
+  version: 'v1';
+  task_id: string;
+  status: 'succeeded' | 'failed' | 'blocked' | 'unsupported';
+  provider_action_id: string | null;
+  occurred_at: string;
+  reason_code: string | null;
+  reason_message: string | null;
+  raw: Record<string, unknown> | null;
+}
+
+const socialExecutionAuthHeaders = (): HeadersInit => {
+  const bearer = (import.meta.env.VITE_DO_SOCIALS_AUTH_BEARER_TOKEN || '').trim();
+  if (!bearer) {
+    return { 'Content-Type': 'application/json' };
+  }
+  return {
+    'Content-Type': 'application/json',
+    Authorization: `Bearer ${bearer}`,
+  };
+};
+
 export const apiClient = {
   // WhatsApp (assisted/manual workflows)
   whatsapp: {
@@ -221,6 +276,28 @@ export const apiClient = {
       fetch(`${API_FULL_URL}/integrations/facebook/page`).then(r =>
         handleResponse<{ page_id: string; page_name?: string | null }>(r)
       ),
+  },
+  socialExecution: {
+    getCapabilities: async (platform?: 'instagram' | 'facebook' | 'whatsapp'): Promise<
+      ApiSocialCapabilityMatrix | Record<string, ApiSocialCapabilityMatrix>
+    > => {
+      const route = platform
+        ? `${API_FULL_URL}/social-execution/capabilities/${platform}`
+        : `${API_FULL_URL}/social-execution/capabilities`;
+      const response = await fetch(route, {
+        method: 'GET',
+        headers: socialExecutionAuthHeaders(),
+      });
+      return handleResponse<ApiSocialCapabilityMatrix | Record<string, ApiSocialCapabilityMatrix>>(response);
+    },
+    executeTask: async (payload: ApiExecuteTaskRequest): Promise<ApiExecuteTaskResponse> => {
+      const response = await fetch(`${API_FULL_URL}/social-execution/execute-task`, {
+        method: 'POST',
+        headers: socialExecutionAuthHeaders(),
+        body: JSON.stringify(payload),
+      });
+      return handleResponse<ApiExecuteTaskResponse>(response);
+    },
   },
   // Channels
   channels: {

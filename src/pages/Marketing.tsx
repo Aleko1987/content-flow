@@ -5,6 +5,7 @@ import { ContentPlanTab } from '@/components/marketing/ContentPlanTab';
 import { PublishQueueTab } from '@/components/marketing/PublishQueueTab';
 import { LogsTab } from '@/components/marketing/LogsTab';
 import { SettingsTab } from '@/components/marketing/SettingsTab';
+import { SocialActionsTab } from '@/components/marketing/SocialActionsTab';
 import { CalendarPage } from '@/components/calendar/CalendarPage';
 import { useKeyboardShortcuts } from '@/hooks/use-keyboard-shortcuts';
 
@@ -42,6 +43,7 @@ const MarketingContent: React.FC = () => {
         {activeTab === 'publish-queue' && <PublishQueueTab />}
         {activeTab === 'calendar' && <CalendarPage />}
         {activeTab === 'logs' && <LogsTab />}
+        {activeTab === 'social-actions' && <SocialActionsTab />}
         {activeTab === 'settings' && <SettingsTab />}
       </main>
     </div>
