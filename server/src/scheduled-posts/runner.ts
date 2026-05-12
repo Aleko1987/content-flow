@@ -12,6 +12,7 @@ import { recordPostedVideo } from '../posting-history/service.js';
 const ENABLED = process.env.SCHEDULED_POSTS_ENABLED !== 'false';
 const INTERVAL_MS = Number(process.env.SCHEDULED_POSTS_INTERVAL_MS ?? 60_000);
 const MAX_BATCH = Number(process.env.SCHEDULED_POSTS_MAX_BATCH ?? 10);
+const MEDIA_URL_CHECK_TIMEOUT_MS = Number(process.env.SCHEDULED_POSTS_MEDIA_URL_CHECK_TIMEOUT_MS ?? 8_000);
 
 const claimPost = async (id: string, now: Date) => {
   const updated = await db
@@ -29,6 +30,11 @@ const markStatus = async (id: string, status: string) => {
     .where(eq(scheduledPosts.id, id));
 };
 
+type PlatformPublishError = {
+  providerKey: string;
+  error: string;
+};
+
 const normalizeText = (caption: string | null | undefined) => {
   const text = (caption ?? '').trim();
   return text;
@@ -36,6 +42,71 @@ const normalizeText = (caption: string | null | undefined) => {
 
 const getErrorMessage = (error: unknown) => {
   return error instanceof Error ? error.message : String(error);
+};
+
+const isPublicHttpUrl = (value: string | null | undefined): value is string => {
+  if (!value) return false;
+  if (value.startsWith('blob:')) return false;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === 'https:' || parsed.protocol === 'http:';
+  } catch {
+    return false;
+  }
+};
+
+const checkMediaUrlReachable = async (mediaUrl: string, mediaLabel: string) => {
+  if (!isPublicHttpUrl(mediaUrl)) {
+    throw new Error(`${mediaLabel} URL is not a valid public HTTP(S) URL`);
+  }
+
+  const tryRequest = async (method: 'HEAD' | 'GET') => {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), MEDIA_URL_CHECK_TIMEOUT_MS);
+    try {
+      const response = await fetch(mediaUrl, {
+        method,
+        redirect: 'follow',
+        signal: controller.signal,
+      });
+      return response;
+    } finally {
+      clearTimeout(timeout);
+    }
+  };
+
+  try {
+    const headResponse = await tryRequest('HEAD');
+    if (headResponse.ok) {
+      return;
+    }
+    if (headResponse.status !== 405 && headResponse.status !== 501) {
+      throw new Error(
+        `${mediaLabel} URL is not publicly reachable (HEAD ${headResponse.status}).`
+      );
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name !== 'AbortError') {
+      throw error;
+    }
+    throw new Error(
+      `${mediaLabel} URL reachability check timed out. Ensure the media URL is public and responsive.`
+    );
+  }
+
+  try {
+    const getResponse = await tryRequest('GET');
+    if (!getResponse.ok) {
+      throw new Error(`${mediaLabel} URL is not publicly reachable (GET ${getResponse.status}).`);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.name !== 'AbortError') {
+      throw error;
+    }
+    throw new Error(
+      `${mediaLabel} URL reachability check timed out. Ensure the media URL is public and responsive.`
+    );
+  }
 };
 
 const isMetaAccessTokenExpired = (message: string) => {
@@ -92,6 +163,7 @@ export const executePost = async (post: ScheduledPostRecord) => {
   const platforms = Array.isArray(post.platforms) ? post.platforms : [];
   const text = normalizeText(post.caption);
   const results: Array<{ providerKey: string; providerRef: string; canonicalUrl?: string }> = [];
+  const errors: PlatformPublishError[] = [];
 
   if (!text) {
     logger.warn(`Scheduled post ${post.id} has empty caption; marking failed`);
@@ -126,78 +198,99 @@ export const executePost = async (post: ScheduledPostRecord) => {
   if (platforms.includes('x')) {
     const account = await getConnectedAccount('x');
     if (!account || account.status !== 'connected') {
-      throw new Error('No connected X account found');
+      errors.push({ providerKey: 'x', error: 'No connected X account found' });
+    } else {
+      const provider = getProvider('x');
+      try {
+        const result = await provider.postText(text, account.tokenData);
+        const normalized: ProviderResult =
+          typeof result === 'string' ? { providerRef: result } : result;
+        results.push({ providerKey: 'x', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
+        postedToAny = true;
+      } catch (error) {
+        errors.push({ providerKey: 'x', error: getErrorMessage(error) });
+      }
     }
-    const provider = getProvider('x');
-    const result = await provider.postText(text, account.tokenData);
-    const normalized: ProviderResult =
-      typeof result === 'string' ? { providerRef: result } : result;
-    results.push({ providerKey: 'x', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
-    postedToAny = true;
   }
 
   if (platforms.includes('facebook')) {
     const account = await getConnectedAccount('facebook');
     if (!account || account.status !== 'connected') {
-      throw new Error('No connected Facebook account found');
-    }
-    const provider = getProvider('facebook');
-    try {
-      let result: string | ProviderResult;
+      errors.push({ providerKey: 'facebook', error: 'No connected Facebook account found' });
+    } else {
+      const provider = getProvider('facebook');
+      try {
+        let result: string | ProviderResult;
 
-      // Prefer attached video for FB video posts, then attached image, then text-only fallback.
-      const videoUrl = video?.storageUrl || null;
-      const imageUrl = image?.storageUrl || null;
-      if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
-        result = await provider.postVideo({ caption: text, videoUrl }, account.tokenData);
-      } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
-        result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
-      } else {
-        result = await provider.postText(text, account.tokenData);
+        // Prefer attached video for FB video posts, then attached image.
+        // If media is attached but not publicly uploaded, fail instead of silently falling back to text.
+        const videoUrl = video?.storageUrl || null;
+        const imageUrl = image?.storageUrl || null;
+        if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
+          await checkMediaUrlReachable(videoUrl, 'Facebook video');
+          result = await provider.postVideo({ caption: text, videoUrl }, account.tokenData);
+        } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
+          await checkMediaUrlReachable(imageUrl, 'Facebook image');
+          result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+        } else if (video || image) {
+          throw new Error(
+            'Facebook publishing requires uploaded media with a public URL. Re-upload and wait for upload to finish before publishing.'
+          );
+        } else {
+          result = await provider.postText(text, account.tokenData);
+        }
+        const normalized: ProviderResult =
+          typeof result === 'string' ? { providerRef: result } : result;
+        results.push({
+          providerKey: 'facebook',
+          providerRef: normalized.providerRef,
+          canonicalUrl: normalized.canonicalUrl,
+        });
+        postedToAny = true;
+      } catch (error) {
+        const friendly = await toFriendlyPublishError('facebook', error);
+        errors.push({ providerKey: 'facebook', error: getErrorMessage(friendly) });
       }
-      const normalized: ProviderResult =
-        typeof result === 'string' ? { providerRef: result } : result;
-      results.push({
-        providerKey: 'facebook',
-        providerRef: normalized.providerRef,
-        canonicalUrl: normalized.canonicalUrl,
-      });
-      postedToAny = true;
-    } catch (error) {
-      throw await toFriendlyPublishError('facebook', error);
     }
   }
 
   if (platforms.includes('instagram')) {
     const account = await getConnectedAccount('instagram');
     if (!account || account.status !== 'connected') {
-      throw new Error('No connected Instagram account found');
-    }
-    const provider = getProvider('instagram');
-    if (!provider.postImage && !provider.postVideo) {
-      throw new Error('Instagram provider does not support media publishing');
-    }
-
-    const videoUrl = video?.storageUrl || null;
-    const imageUrl = image?.storageUrl || null;
-
-    try {
-      let result: string | ProviderResult;
-      if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
-        result = await provider.postVideo({ caption: text, videoUrl, coverImageUrl: publicImageUrl || undefined }, account.tokenData);
-      } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
-        result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+      errors.push({ providerKey: 'instagram', error: 'No connected Instagram account found' });
+    } else {
+      const provider = getProvider('instagram');
+      if (!provider.postImage && !provider.postVideo) {
+        errors.push({ providerKey: 'instagram', error: 'Instagram provider does not support media publishing' });
       } else {
-        throw new Error(
-          'Instagram publishing requires an uploaded image or video with a public URL. Add media in the post and wait for upload to finish.'
-        );
+        const videoUrl = video?.storageUrl || null;
+        const imageUrl = image?.storageUrl || null;
+
+        try {
+          let result: string | ProviderResult;
+          if (videoUrl && !videoUrl.startsWith('blob:') && provider.postVideo) {
+            await checkMediaUrlReachable(videoUrl, 'Instagram video');
+            if (publicImageUrl) {
+              await checkMediaUrlReachable(publicImageUrl, 'Instagram cover image');
+            }
+            result = await provider.postVideo({ caption: text, videoUrl, coverImageUrl: publicImageUrl || undefined }, account.tokenData);
+          } else if (imageUrl && !imageUrl.startsWith('blob:') && provider.postImage) {
+            await checkMediaUrlReachable(imageUrl, 'Instagram image');
+            result = await provider.postImage({ caption: text, imageUrl }, account.tokenData);
+          } else {
+            throw new Error(
+              'Instagram publishing requires an uploaded image or video with a public URL. Add media in the post and wait for upload to finish.'
+            );
+          }
+          const normalized: ProviderResult =
+            typeof result === 'string' ? { providerRef: result } : result;
+          results.push({ providerKey: 'instagram', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
+          postedToAny = true;
+        } catch (error) {
+          const friendly = await toFriendlyPublishError('instagram', error);
+          errors.push({ providerKey: 'instagram', error: getErrorMessage(friendly) });
+        }
       }
-      const normalized: ProviderResult =
-        typeof result === 'string' ? { providerRef: result } : result;
-      results.push({ providerKey: 'instagram', providerRef: normalized.providerRef, canonicalUrl: normalized.canonicalUrl });
-      postedToAny = true;
-    } catch (error) {
-      throw await toFriendlyPublishError('instagram', error);
     }
   }
 
@@ -205,38 +298,41 @@ export const executePost = async (post: ScheduledPostRecord) => {
     const best = media.find((m) => String(m.type) === 'video') || media.find((m) => String(m.type) === 'image') || null;
     const mediaUrl = best?.storageUrl || null;
     if (!mediaUrl || mediaUrl.startsWith('blob:')) {
-      throw new Error(
-        'WhatsApp Status assisted send requires an uploaded media URL. Add an image/video and wait for upload to finish.'
-      );
-    }
-
-    try {
-      if (isAssistedConfirmationEnabled()) {
-        const confirmation = await startAssistedConfirmationForScheduledPost({
-          scheduledPostId: post.id,
-          caption: text,
-          mediaUrl,
-          mimeType: best?.mimeType || null,
-          recipientPhone: post.recipientPhone ?? null,
-          operationId: `${executionAttemptId}:prompt`,
-        });
-        results.push({
-          providerKey: 'whatsapp_status',
-          providerRef: confirmation.promptMessageId,
-        });
-        queuedForConfirmation = true;
-      } else {
-        const result = await sendWhatsAppAssistedStatus({
-          text,
-          mediaUrl,
-          mimeType: best?.mimeType || null,
-          recipientPhone: post.recipientPhone ?? null,
-        });
-        results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
+      errors.push({
+        providerKey: 'whatsapp_status',
+        error: 'WhatsApp Status assisted send requires an uploaded media URL. Add an image/video and wait for upload to finish.',
+      });
+    } else {
+      try {
+        await checkMediaUrlReachable(mediaUrl, 'WhatsApp media');
+        if (isAssistedConfirmationEnabled()) {
+          const confirmation = await startAssistedConfirmationForScheduledPost({
+            scheduledPostId: post.id,
+            caption: text,
+            mediaUrl,
+            mimeType: best?.mimeType || null,
+            recipientPhone: post.recipientPhone ?? null,
+            operationId: `${executionAttemptId}:prompt`,
+          });
+          results.push({
+            providerKey: 'whatsapp_status',
+            providerRef: confirmation.promptMessageId,
+          });
+          queuedForConfirmation = true;
+        } else {
+          const result = await sendWhatsAppAssistedStatus({
+            text,
+            mediaUrl,
+            mimeType: best?.mimeType || null,
+            recipientPhone: post.recipientPhone ?? null,
+          });
+          results.push({ providerKey: 'whatsapp_status', providerRef: result.messageId });
+        }
+        postedToAny = true;
+      } catch (error) {
+        const friendly = await toFriendlyPublishError('whatsapp_status', error);
+        errors.push({ providerKey: 'whatsapp_status', error: getErrorMessage(friendly) });
       }
-      postedToAny = true;
-    } catch (error) {
-      throw await toFriendlyPublishError('whatsapp_status', error);
     }
   }
 
@@ -249,7 +345,10 @@ export const executePost = async (post: ScheduledPostRecord) => {
 
   if (postedToAny) {
     const publishedAt = new Date();
-    await markStatus(post.id, queuedForConfirmation ? 'queued' : 'published');
+    const nextStatus = queuedForConfirmation
+      ? (errors.length > 0 ? 'partial_failed' : 'queued')
+      : (errors.length > 0 ? 'partial_failed' : 'published');
+    await markStatus(post.id, nextStatus);
     if (!queuedForConfirmation && post.contentItemId) {
       await db
         .update(contentItems)
@@ -275,10 +374,13 @@ export const executePost = async (post: ScheduledPostRecord) => {
     }
   } else {
     await markStatus(post.id, 'failed');
+    if (errors.length > 0) {
+      throw new Error(`Scheduled post failed on all platforms: ${errors.map((e) => `${e.providerKey}: ${e.error}`).join(' | ')}`);
+    }
     throw new Error('No supported platforms selected for publishing');
   }
 
-  return { postedToAny, results };
+  return { postedToAny, results, errors };
 };
 
 export const processDueScheduledPosts = async () => {

@@ -88,7 +88,7 @@ const platformSchema = z
     z.literal('whatsapp_status'),
   ])
   .transform((value) => (value === 'youtube-shorts' ? 'youtube_shorts' : value));
-const statusSchema = z.enum(['planned', 'queued', 'published', 'failed']);
+const statusSchema = z.enum(['planned', 'queued', 'published', 'partial_failed', 'failed']);
 
 const mediaItemSchema = z.object({
   id: z.string().uuid().optional(),
@@ -280,7 +280,11 @@ router.post('/:id/execute', async (req: Request, res: Response, next: NextFuncti
     const result = await executePost(post);
 
     const [updated] = await db.select().from(scheduledPosts).where(eq(scheduledPosts.id, id));
-    res.json({ status: updated?.status ?? post.status, results: result?.results ?? [] });
+    res.json({
+      status: updated?.status ?? post.status,
+      results: result?.results ?? [],
+      errors: result?.errors ?? [],
+    });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to execute scheduled post';
     logger.error(

@@ -1,6 +1,6 @@
 // Types for Calendar Scheduled Posts
 
-export type ScheduledPostStatus = 'planned' | 'queued' | 'published' | 'failed';
+export type ScheduledPostStatus = 'planned' | 'queued' | 'published' | 'partial_failed' | 'failed';
 
 import type { ChannelKey } from './content-ops';
 

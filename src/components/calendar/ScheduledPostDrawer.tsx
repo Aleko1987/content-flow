@@ -60,8 +60,26 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
   const hasPendingImageUpload = media.some(
     (m) => m.type === 'image' && !!m.localObjectUrl && (!m.storageUrl || !m.storageUrl.startsWith('http'))
   );
+  const hasNonPublicMediaUrl = media.some(
+    (m) => !!m.storageUrl && !/^https?:\/\//i.test(m.storageUrl)
+  );
+  const hasMediaMissingPublicUrl = media.some(
+    (m) => !m.storageUrl || !/^https?:\/\//i.test(m.storageUrl)
+  );
   const requiresVideoCompanionImage = hasVideoMedia;
   const blockVideoPost = requiresVideoCompanionImage && (!hasUploadedPublicImage || hasPendingImageUpload);
+  const formatPublishErrorMessage = (raw: string) => {
+    const message = raw.trim();
+    const normalized = message.toLowerCase();
+    if (
+      normalized.includes('not publicly reachable') ||
+      normalized.includes('reachability check timed out') ||
+      normalized.includes('not a valid public http')
+    ) {
+      return 'Media URL is not publicly reachable. Re-upload the media, wait for upload to finish, then try again.';
+    }
+    return message;
+  };
 
   const formatLocalDate = (value: Date) => {
     const year = value.getFullYear();
@@ -165,7 +183,28 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
       });
       const result = await scheduledPostApiService.executeNow(post.id);
       if (result.status === 'failed') {
-        toast({ title: 'Failed to post', description: 'Publish failed. Check Render logs for details.', variant: 'destructive' });
+        const firstError = result.errors?.[0]?.error;
+        toast({
+          title: 'Failed to post',
+          description: firstError
+            ? formatPublishErrorMessage(firstError)
+            : 'Publish failed. Please review media upload/public URL and try again.',
+          variant: 'destructive',
+        });
+        return;
+      }
+      if (result.status === 'partial_failed') {
+        const failedPlatforms = (result.errors ?? []).map((e) => e.providerKey).join(', ');
+        const firstError = result.errors?.[0]?.error;
+        toast({
+          title: 'Partially posted',
+          description: failedPlatforms
+            ? `${formatPublishErrorMessage(firstError || '')} Failed: ${failedPlatforms}.`
+            : 'Published to some platforms, but one or more platforms failed.',
+          variant: 'destructive',
+        });
+        onSave();
+        onClose();
         return;
       }
       const canonicalUrl = result.results?.find(r => r.canonicalUrl)?.canonicalUrl;
@@ -178,7 +217,7 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
     } catch (error) {
       console.error('Post now failed:', error);
       const message = error instanceof Error ? error.message : 'Failed to post now';
-      toast({ title: 'Error', description: message, variant: 'destructive' });
+      toast({ title: 'Error', description: formatPublishErrorMessage(message), variant: 'destructive' });
     } finally {
       setPostingNow(false);
     }
@@ -312,6 +351,16 @@ export const ScheduledPostDrawer: React.FC<ScheduledPostDrawerProps> = ({
           <div>
             <Label>Media</Label>
             <MediaDropzone value={media} onChange={setMedia} normalizeForInstagram={instagramSelected} />
+            {media.length > 0 && hasMediaMissingPublicUrl && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                Some media is still uploading or missing a public URL. Wait for upload to finish before saving/posting.
+              </p>
+            )}
+            {hasNonPublicMediaUrl && (
+              <p className="mt-2 text-xs text-muted-foreground">
+                A selected media URL is not publicly accessible (`http/https`). Re-upload the media before posting.
+              </p>
+            )}
             {requiresVideoCompanionImage && blockVideoPost && (
               <p className="mt-2 text-xs text-muted-foreground">
                 This video post needs a companion image with a public URL (used for cover/thumbnail reliability). Add an image and wait for upload to finish.

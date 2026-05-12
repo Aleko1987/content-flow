@@ -241,7 +241,11 @@ const processDue = async (): Promise<{ processed: number; published: number; fai
 
 const executeNow = async (
   id: string
-): Promise<{ status: string; results?: Array<{ providerKey: string; providerRef: string; canonicalUrl?: string }> }> => {
+): Promise<{
+  status: string;
+  results?: Array<{ providerKey: string; providerRef: string; canonicalUrl?: string }>;
+  errors?: Array<{ providerKey: string; error: string }>;
+}> => {
   const response = await fetch(`${API_FULL_URL}/scheduled-posts/${id}/execute`, {
     method: 'POST',
   });
