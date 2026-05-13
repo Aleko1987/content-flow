@@ -1,140 +1,59 @@
-# AI Context - Content Flow App
+# AI Context
 
-## Purpose
-Content Flow is a marketing content operations platform for planning, scheduling, and publishing content across multiple social media channels. It replaces Buffer-like workflows with integrated content planning, calendar scheduling, and publish logging.
+## Software Summary
+- **Name:** Content Flow.
+- **Type:** Marketing content operations and social publishing application.
+- **Primary purpose:** Plan, schedule, publish, and track marketing content across social channels.
+- **Current shape:** React/Vite frontend with a separate Express API server backed by Neon Postgres through Drizzle ORM.
+- **Main user:** A marketer, content operator, or small team managing planned content, channel variants, publish queues, social posting, and publishing history.
 
-## Main Flows
+## Business Purpose
+- Replace spreadsheet/manual social content workflows with a structured content operations system.
+- Maintain a content plan, channel-specific variants, publish tasks, scheduled calendar posts, media assets, and publish logs.
+- Support direct or assisted publishing to X, Instagram, Facebook, and WhatsApp Status workflows where configured.
+- Emit and consume shared social execution/event contracts for use with a broader DO platform.
 
-### 1. Content Planning (Content Plan Tab)
-- Create content items with title, hook, pillar, format, status, priority
-- Manage content lifecycle from idea → draft → review → approved → published
-- Table view with filters, search, and quick status updates
+## Current Product Areas
+| Area | Status | Notes |
+|---|---:|---|
+| Content planning | Implemented | Content items, media associations, filters, drawers, and demo data exist. |
+| Channel variants | Implemented | Per-channel caption/hashtag/CTA/link fields exist in backend and UI types. |
+| Publish queue | Implemented | Publish tasks can be created, scheduled, executed, and logged. |
+| Calendar scheduling | Implemented | Scheduled posts are DB-backed and can process due posts. |
+| Media storage | Partially implemented | R2/S3-compatible presigned upload routes exist; scheduled post media may still store metadata and public URLs only. |
+| Social publishing | Partially implemented | X, Instagram, Facebook providers exist; WhatsApp Status is assisted/manual rather than true status auto-publish. |
+| OAuth integrations | Partially implemented | X, Instagram, and Facebook flows exist; OAuth state is in memory. |
+| Social contract | Implemented in server | DO-Socials schemas, execution, capabilities, idempotency, and tests exist. |
+| Authentication | Limited | Service-to-service auth exists for social contract routes; general app/API user auth is not implemented. |
 
-### 2. Channel Variants
-- Each content item can have platform-specific variants
-- Variants include: caption, hashtags, media_prompt, CTA, link_url, UTM parameters
-- Supports: LinkedIn, X (Twitter), Instagram, Facebook, TikTok, YouTube Shorts
+## Maturity / Status
+- The repo is beyond prototype for several backend workflows, but not a fully unified production platform.
+- The backend includes migrations, tests for social contract and WhatsApp helper logic, and production-oriented deployment notes.
+- Several parts are transitional:
+  - `content_items.media_ids` is marked deprecated but still present for backward compatibility.
+  - Some routes defensively create or alter tables at runtime.
+  - OAuth state is stored in memory.
+  - Frontend still has legacy/local mock or localStorage patterns alongside API-backed services.
 
-### 3. Publish Queue (Kanban)
-- Visual board with columns: todo, scheduled, posted, skipped
-- Drag-and-drop to update publish task state
-- Each task links to content item + channel variant
+## Fit In A Future Unified Platform
+- Best role: a **Content/Social Operations module** inside a larger platform.
+- Strong candidates to preserve:
+  - Content item lifecycle.
+  - Channel variants.
+  - Publish task execution model.
+  - Scheduled post runner and status model.
+  - Social execution contract and capability matrices.
+  - Media asset abstraction.
+- Likely shared platform dependencies:
+  - Global users/workspaces/organizations.
+  - Global connected social accounts.
+  - Global media asset library.
+  - Shared audit/event bus.
+  - Shared auth and permission model.
 
-### 4. Calendar Scheduling (Calendar Tab)
-- Month and Week view modes
-- Click any day to create/edit scheduled posts
-- Drag-and-drop media files from desktop to create posts
-- Drag existing posts between days to reschedule
-- Each scheduled post has: time, caption, platforms, media attachments
-- **Now persisted to Neon Postgres via API**
-
-### 5. Publish Logging (Logs Tab)
-- Records all publish events with timestamps
-- Tracks: channel, status, post URL, error messages
-
-## Data Models
-
-### ContentItem
-- id, title, hook, pillar, format, status, priority, notes
-- Status: idea, draft, review, approved, published, archived
-
-### ChannelVariant
-- content_item_id, channel_key, caption, hashtags, media_prompt, cta, link_url
-
-### PublishTask
-- content_item_id, channel_key, state, scheduled_for, checklist
-- State: todo, scheduled, posted, skipped
-
-### PublishLog
-- publish_task_id, channel_key, status, post_url, error_message, published_at
-
-### ScheduledPost (Calendar) - **DB-backed**
-- id (uuid), title, caption, scheduled_at (timestamptz)
-- platforms: jsonb array of platform keys
-- status: planned, queued, published, failed
-- created_at, updated_at
-
-### ScheduledPostMedia (Calendar) - **DB-backed**
-- id (uuid), scheduled_post_id (FK), type (image/video)
-- file_name, mime_type, size
-- storage_url (null for now - frontend uses object URLs for preview)
-
-### MediaItem (Frontend type)
-- id, type (image/video), fileName, mimeType, size
-- localObjectUrl (for frontend preview)
-- storageUrl (for persistence, future)
-
-## Persistence
-
-### Backend (Neon Postgres + Drizzle)
-- **Database**: Neon Postgres via `DATABASE_URL` env var
-- **ORM**: Drizzle ORM with TypeScript schema
-- **Migrations**: `server/src/db/migrations/` (run via `npm run db:migrate`)
-
-### API Endpoints (Scheduled Posts)
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/scheduled-posts?from=&to=` | GET | Fetch posts in date range |
-| `/api/scheduled-posts` | POST | Create new post with media |
-| `/api/scheduled-posts/:id` | PUT | Update post (replaces media) |
-| `/api/scheduled-posts/:id` | DELETE | Delete post (cascades media) |
-
-### Content Ops (Legacy)
-- **Content Items, Variants, Tasks, Logs**: Still uses mock API layer
-- Future: migrate to same backend pattern
-
-### Frontend Services
-| Service | Storage |
-|---------|---------|
-| `scheduledPostApiService.ts` | Neon Postgres via API |
-| `scheduledPostService.ts` | localStorage (deprecated, kept for reference) |
-| `ContentOpsContext.tsx` | React Context + mock data |
-
-## Design System
-- **Theme**: Dark neon aesthetic (Linear/Raycast inspired)
-- **Colors**: HSL-based semantic tokens in index.css
-- **Components**: shadcn/ui with custom variants
-- **Typography**: Clean, high-contrast
-
-## File Validation (Calendar Media)
-- Images: PNG, JPG, JPEG, WEBP, GIF (max 20MB)
-- Videos: MP4, WEBM, MOV (max 200MB)
-- Previews via URL.createObjectURL with cleanup
-- **Note**: Media uploads to S3/R2 not yet implemented
-
-## Platforms Supported
-- LinkedIn, X (Twitter), Instagram, Facebook, TikTok, YouTube Shorts
-
-## Environment Variables
-
-### Frontend (.env)
-```
-VITE_API_URL=http://localhost:3001
-```
-
-### Server (server/.env)
-```
-DATABASE_URL=postgresql://user:password@host/database?sslmode=require
-PORT=3001
-NODE_ENV=development
-CORS_ORIGINS=http://localhost:5173,http://localhost:8080
-```
-
-## Development Commands
-
-### Database
-```bash
-cd server
-npm run db:generate   # Generate migrations from schema
-npm run db:migrate    # Run migrations
-npm run db:seed       # Seed demo data (content ops only)
-```
-
-### Running
-```bash
-# Terminal 1: Backend
-cd server && npm run dev
-
-# Terminal 2: Frontend  
-npm run dev
-```
+## Open Questions / Needs Review
+- UNKNOWN: Whether this repo is intended to remain single-tenant or become multi-tenant.
+- NEEDS REVIEW: General user authentication and authorization are absent from most API routes.
+- NEEDS REVIEW: OAuth state should move from process memory to durable/expiring storage before multi-instance deployment.
+- NEEDS REVIEW: Confirm whether both `bun.lockb` and `package-lock.json` are intentionally maintained.
+- NEEDS REVIEW: Clarify which frontend service paths are authoritative versus legacy/localStorage fallbacks.
