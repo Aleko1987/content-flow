@@ -96,6 +96,33 @@ router.post(
     try {
       const result = await processIncomingConfirmationWebhook(req.body as any);
       logger.info('Forwarded WhatsApp webhook processed', result);
+
+      // Also relay to unified operator platform (margins invoice + assisted posting).
+      const unifiedUrl = String(process.env.UNIFIED_WHATSAPP_WEBHOOK_URL || process.env.CONTENT_FLOW_UNIFIED_WEBHOOK_URL || '').trim();
+      const unifiedToken = String(process.env.CONTENT_FLOW_FORWARD_TOKEN || '').trim();
+      if (unifiedUrl) {
+        try {
+          const relay = await fetch(unifiedUrl, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              ...(unifiedToken ? { 'x-content-flow-forward-token': unifiedToken } : {}),
+              'x-earthcure-forwarded': '1',
+            },
+            body: JSON.stringify(req.body || {}),
+          });
+          logger.info('Relayed WhatsApp webhook to unified', {
+            status: relay.status,
+            ok: relay.ok,
+            endpoint: unifiedUrl,
+          });
+        } catch (relayError) {
+          logger.error('Unified WhatsApp relay failed', {
+            error: relayError instanceof Error ? relayError.message : String(relayError),
+          });
+        }
+      }
+
       return res.status(200).json({ ok: true, ...result });
     } catch (error) {
       logger.error('Forwarded WhatsApp webhook processing failed', {
